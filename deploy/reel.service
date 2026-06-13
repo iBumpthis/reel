@@ -1,0 +1,29 @@
+[Unit]
+Description=Reel — self-hosted media library and player
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/reel/app
+ExecStart=/usr/bin/node server.js
+
+# Config via environment variables (override config.json values)
+Environment=REEL_HOST=0.0.0.0
+Environment=REEL_PORT=32410
+Environment=REEL_DB_PATH=/opt/reel/data/reel.sqlite
+
+# Run as a dedicated user for isolation
+User=reel
+Group=reel
+
+# Restart policy
+Restart=on-failure
+RestartSec=5
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=reel
+
+[Install]
+WantedBy=multi-user.target

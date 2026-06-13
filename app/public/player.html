@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Reel — Player</title>
+  <link rel="stylesheet" href="/css/base.css">
+  <link rel="stylesheet" href="/css/components.css">
+  <link rel="stylesheet" href="/css/player.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="app-header-left">
+      <a href="/" class="app-title">Reel</a>
+      <span class="app-version" id="appVersion">—</span>
+    </div>
+    <div class="app-header-right">
+      <button id="browseBtn" class="btn btn-sm">Browse</button>
+    </div>
+  </header>
+
+  <main class="player-page">
+    <div class="player-layout">
+      <!-- LEFT: player column -->
+      <div class="player-column">
+
+        <!-- Playback frame: video + canvas + controls + fs toast -->
+        <div class="playback-frame mode-video" id="playbackFrame">
+          <video id="player" playsinline></video>
+          <canvas id="vizCanvas"></canvas>
+
+          <!-- Custom control bar -->
+          <div class="player-controls" id="playerControls">
+            <button class="cc-btn cc-play" id="ccPlay" title="Play / Pause (Space)">
+              <svg class="cc-icon-play" id="ccPlayIcon" viewBox="0 0 24 24" fill="currentColor">
+                <polygon points="6,4 20,12 6,20"/>
+              </svg>
+              <svg class="cc-icon-pause hidden" id="ccPauseIcon" viewBox="0 0 24 24" fill="currentColor">
+                <rect x="5" y="4" width="4" height="16"/>
+                <rect x="15" y="4" width="4" height="16"/>
+              </svg>
+            </button>
+            <span class="cc-time" id="ccTimeCurrent">0:00</span>
+            <input type="range" class="cc-seek" id="ccSeek" min="0" max="100" step="0.1" value="0">
+            <span class="cc-time" id="ccTimeDuration">0:00</span>
+            <select class="cc-speed" id="ccSpeed" title="Playback speed">
+              <option value="0.5">0.5×</option>
+              <option value="0.75">0.75×</option>
+              <option value="1" selected>1×</option>
+              <option value="1.25">1.25×</option>
+              <option value="1.5">1.5×</option>
+              <option value="2">2×</option>
+            </select>
+            <input type="range" class="cc-volume" id="ccVolume" min="0" max="1" step="0.01" value="1" title="Volume">
+            <button class="cc-btn cc-fullscreen" id="ccFullscreen" title="Fullscreen (F)">
+              <svg class="cc-icon-fs-enter" id="ccFsEnter" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="15,3 21,3 21,9"/>
+                <polyline points="9,21 3,21 3,15"/>
+                <polyline points="21,3 14,10"/>
+                <polyline points="3,21 10,14"/>
+              </svg>
+              <svg class="cc-icon-fs-exit hidden" id="ccFsExit" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="4,14 10,14 10,20"/>
+                <polyline points="20,10 14,10 14,4"/>
+                <polyline points="14,10 21,3"/>
+                <polyline points="10,14 3,21"/>
+              </svg>
+            </button>
+          </div>
+
+          <!-- Fullscreen marker toast -->
+          <div class="fs-toast hidden" id="fsToast"></div>
+        </div>
+
+        <!-- Now playing strip -->
+        <div class="now-playing hidden" id="nowPlaying">
+          <div class="np-pill np-adjacent" id="npPrev"></div>
+          <div class="np-pill np-current" id="npCurrent"></div>
+          <div class="np-pill np-adjacent" id="npNext"></div>
+        </div>
+
+        <!-- Mode toolbar -->
+        <div class="mode-toolbar" id="modeToolbar">
+          <div class="mode-toggles">
+            <button class="mode-btn active" data-mode="video" title="Video">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2" y="4" width="20" height="16" rx="2"/>
+                <polygon points="10,9 16,12 10,15"/>
+              </svg>
+            </button>
+            <button class="mode-btn" data-mode="audio" title="Audio Only">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="11,5 6,9 2,9 2,15 6,15 11,19"/>
+                <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+                <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+              </svg>
+            </button>
+            <button class="mode-btn" data-mode="visualizer" title="Visualizer">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="4" y="10" width="2" height="8" rx="1"/>
+                <rect x="8" y="6" width="2" height="12" rx="1"/>
+                <rect x="12" y="3" width="2" height="18" rx="1"/>
+                <rect x="16" y="8" width="2" height="10" rx="1"/>
+                <rect x="20" y="11" width="2" height="6" rx="1"/>
+              </svg>
+            </button>
+          </div>
+          <div class="viz-options hidden" id="vizOptions">
+            <div class="viz-style-selector">
+              <button class="viz-style-btn active" data-style="bars">Bars</button>
+              <button class="viz-style-btn" data-style="lines">Lines</button>
+            </div>
+            <div class="theme-selector">
+              <button class="theme-btn" data-theme="muted" title="Muted">
+                <span class="theme-dot theme-dot-muted"></span>
+              </button>
+              <button class="theme-btn" data-theme="colorful" title="Colorful">
+                <span class="theme-dot theme-dot-colorful"></span>
+              </button>
+              <button class="theme-btn active" data-theme="rgb" title="RGB">
+                <span class="theme-dot theme-dot-rgb"></span>
+              </button>
+            </div>
+          </div>
+          <div class="mode-notice hidden" id="modeNotice"></div>
+        </div>
+
+        <!-- Media info -->
+        <div class="player-meta">
+          <h1 id="playerTitle">Loading…</h1>
+          <div class="text-muted text-sm" id="playerSub"></div>
+        </div>
+
+        <!-- Action buttons -->
+        <div class="player-actions">
+          <button class="btn btn-sm" id="openDescOverlay">Description</button>
+          <button class="btn btn-sm" id="openImportOverlay">Import Markers</button>
+        </div>
+
+        <!-- Description display (read-only) -->
+        <div class="desc-display hidden" id="descDisplay">
+          <div id="descContent"></div>
+        </div>
+      </div>
+
+      <!-- RIGHT: markers panel -->
+      <div class="markers-panel" id="markersPanel">
+        <div class="markers-panel-header">
+          <h3>Markers</h3>
+          <button class="btn btn-sm" id="markersToggle">collapse</button>
+        </div>
+        <div class="markers-scroll" id="markersScroll">
+          <div id="markersList"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Browse overlay -->
+  <div class="overlay hidden" id="browseOverlay">
+    <div class="overlay-backdrop" data-close="browseOverlay"></div>
+    <div class="browse-panel">
+      <div class="browse-header">
+        <span class="overlay-title">Browse Library</span>
+        <button class="overlay-close" data-close="browseOverlay">✕</button>
+      </div>
+      <div class="browse-controls">
+        <select id="browseLib"><option value="">All libraries</option></select>
+        <input type="search" id="browseQ" placeholder="Search…">
+      </div>
+      <div class="browse-list" id="browseList"></div>
+    </div>
+  </div>
+
+  <!-- Description overlay -->
+  <div class="overlay hidden" id="descOverlay">
+    <div class="overlay-backdrop" data-close="descOverlay"></div>
+    <div class="overlay-panel">
+      <div class="overlay-header">
+        <span class="overlay-title">Description</span>
+        <button class="overlay-close" data-close="descOverlay">✕</button>
+      </div>
+      <textarea id="descText" placeholder="Notes or description…"></textarea>
+      <div class="overlay-footer">
+        <span class="text-sm text-muted" id="descStatus"></span>
+        <button class="btn btn-accent" id="descSave">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Import markers overlay -->
+  <div class="overlay hidden" id="importOverlay">
+    <div class="overlay-backdrop" data-close="importOverlay"></div>
+    <div class="overlay-panel">
+      <div class="overlay-header">
+        <span class="overlay-title">Import Markers</span>
+        <button class="overlay-close" data-close="importOverlay">✕</button>
+      </div>
+      <textarea id="importText" class="mono" rows="10"
+        placeholder="0:00 Intro&#10;01:10 Track name&#10;05:08 Another track"></textarea>
+      <div class="overlay-footer">
+        <span class="text-sm text-muted" id="importStatus"></span>
+        <button class="btn btn-accent" id="importBtn">Import</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast container -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script type="module" src="/js/player/index.js"></script>
+</body>
+</html>

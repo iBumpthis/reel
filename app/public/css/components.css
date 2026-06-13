@@ -1,0 +1,324 @@
+/* ============================================================
+   Reel — Shared components
+   Buttons, inputs, badges, pills, overlays, toasts
+   ============================================================ */
+
+/* --- Buttons --- */
+button, .btn {
+  font-family: var(--font-base);
+  font-size: 0.857rem;
+  font-weight: 500;
+  padding: 7px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+  white-space: nowrap;
+}
+button:hover, .btn:hover {
+  background: var(--bg-surface-hover);
+  border-color: var(--border-focus);
+}
+button:active, .btn:active {
+  background: var(--bg-surface-active);
+}
+
+.btn-accent {
+  background: var(--accent);
+  color: var(--text-inverse);
+  border-color: var(--accent);
+}
+.btn-accent:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.btn-sm {
+  font-size: 0.786rem;
+  padding: 4px 10px;
+}
+
+.btn-icon {
+  padding: 6px 10px;
+  line-height: 1;
+  min-width: 32px;
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+button:disabled, .btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* --- Inputs --- */
+input[type="text"],
+input[type="search"],
+input[type="number"],
+textarea,
+select {
+  font-family: var(--font-base);
+  font-size: 0.857rem;
+  padding: 7px 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  transition: border-color var(--transition-fast);
+}
+input[type="text"]:focus,
+input[type="search"]:focus,
+input[type="number"]:focus,
+textarea:focus,
+select:focus {
+  border-color: var(--border-focus);
+  outline: none;
+}
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-muted);
+}
+
+select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238899a6' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  padding-right: 28px;
+  cursor: pointer;
+}
+
+textarea {
+  width: 100%;
+  min-height: 100px;
+  resize: vertical;
+  line-height: 1.5;
+}
+textarea.mono {
+  font-family: var(--font-mono);
+  font-size: 0.786rem;
+}
+
+/* --- Badges --- */
+.badge {
+  display: inline-block;
+  font-size: 0.714rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  line-height: 1.4;
+}
+.badge-audio {
+  background: rgba(100, 180, 255, 0.15);
+  color: #7ab8e0;
+}
+.badge-video {
+  background: rgba(180, 130, 255, 0.15);
+  color: #b090e0;
+}
+
+/* --- Tag pills --- */
+.tag-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.786rem;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--accent-muted);
+  color: var(--accent);
+  border: 1px solid transparent;
+  cursor: default;
+}
+.tag-pill-remove {
+  cursor: pointer;
+  font-size: 0.857rem;
+  line-height: 1;
+  opacity: 0.6;
+}
+.tag-pill-remove:hover { opacity: 1; }
+
+.tag-pill-clickable {
+  cursor: pointer;
+  transition: border-color var(--transition-fast);
+}
+.tag-pill-clickable:hover {
+  border-color: var(--accent);
+}
+
+/* --- Toast --- */
+.toast-container {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.toast {
+  padding: 10px 16px;
+  border-radius: var(--radius-md);
+  font-size: 0.857rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  color: var(--text-primary);
+  opacity: 0;
+  transform: translateY(8px);
+  animation: toast-in 200ms ease forwards;
+  max-width: 360px;
+}
+.toast-success {
+  background: var(--success-muted);
+  border-color: var(--success);
+  color: var(--success);
+}
+.toast-error {
+  background: var(--error-muted);
+  border-color: var(--error);
+  color: var(--error);
+}
+
+@keyframes toast-in {
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* --- Overlay / Modal --- */
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.overlay-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+}
+.overlay-panel {
+  position: relative;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  max-width: 600px;
+  width: 90vw;
+  max-height: 85vh;
+  overflow-y: auto;
+}
+.overlay-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+.overlay-title {
+  font-size: 1.14rem;
+  font-weight: 600;
+}
+.overlay-close {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 4px 8px;
+}
+.overlay-close:hover { color: var(--text-primary); }
+.overlay-footer {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+/* --- Inline edit form (card expansion) --- */
+.edit-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-subtle);
+  margin-top: 10px;
+}
+.edit-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.edit-field-wide {
+  grid-column: 1 / -1;
+}
+.edit-label {
+  font-size: 0.714rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+.edit-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+}
+.edit-status {
+  font-size: 0.786rem;
+  color: var(--text-secondary);
+}
+
+/* --- Tag input with autocomplete --- */
+.tag-input-wrap {
+  position: relative;
+}
+.tag-input-current {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 6px;
+  min-height: 24px;
+}
+.tag-autocomplete {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  max-height: 160px;
+  overflow-y: auto;
+  z-index: 10;
+}
+.tag-autocomplete-item {
+  padding: 6px 10px;
+  font-size: 0.857rem;
+  cursor: pointer;
+}
+.tag-autocomplete-item:hover,
+.tag-autocomplete-item.active {
+  background: var(--bg-surface-hover);
+}
+
+@media (max-width: 640px) {
+  .edit-form {
+    grid-template-columns: 1fr;
+  }
+  .toast-container {
+    left: 14px;
+    right: 14px;
+    bottom: 14px;
+  }
+  .toast { max-width: none; }
+}

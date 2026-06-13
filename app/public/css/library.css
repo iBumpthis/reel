@@ -1,0 +1,234 @@
+/* ============================================================
+   Reel — Library page
+   Filter bar, media cards, grid layout
+   ============================================================ */
+
+/* --- Search input (header) --- */
+.search-input {
+  width: 260px;
+  max-width: 100%;
+}
+
+@media (max-width: 640px) {
+  .search-input {
+    width: 100%;
+    order: 10;
+  }
+}
+
+/* --- Filter bar --- */
+.filter-bar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border-subtle);
+  margin-bottom: 12px;
+}
+
+.filter-bar select {
+  min-width: 120px;
+}
+
+.filter-tags {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.filter-tags:empty { display: none; }
+
+.filter-tag-active {
+  background: var(--accent);
+  color: var(--text-inverse);
+}
+
+/* --- Status bar --- */
+.status-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0 10px;
+  font-size: 0.786rem;
+  color: var(--text-secondary);
+}
+
+.scan-status {
+  transition: opacity var(--transition-normal);
+}
+
+/* --- Media grid --- */
+.media-grid {
+  display: grid;
+  gap: 8px;
+}
+
+/* --- Media card --- */
+.media-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  transition: border-color var(--transition-fast);
+}
+.media-card:hover {
+  border-color: var(--border-default);
+}
+
+.card-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.card-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.card-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
+.card-title {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  color: var(--text-primary);
+}
+.card-title:hover {
+  color: var(--accent);
+}
+
+.card-year {
+  font-size: 0.857rem;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.card-artist {
+  font-size: 0.857rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 6px;
+}
+
+.card-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 0.786rem;
+  color: var(--text-muted);
+}
+
+.card-meta-sep::before {
+  content: '·';
+  margin: 0 2px;
+}
+
+.card-tags {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+.card-tags:empty { margin-top: 0; }
+
+.card-marker-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.786rem;
+  color: var(--text-muted);
+}
+.card-marker-count svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* Card actions (right side) */
+.card-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+.media-card:hover .card-actions {
+  opacity: 1;
+}
+
+/* On touch devices, always show actions */
+@media (hover: none) {
+  .card-actions { opacity: 1; }
+}
+
+/* --- Load more --- */
+.load-more {
+  display: flex;
+  justify-content: center;
+  padding: 20px 0;
+}
+
+/* --- Empty state --- */
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--text-secondary);
+}
+.empty-state-title {
+  font-size: 1.14rem;
+  font-weight: 500;
+  margin-bottom: 6px;
+  color: var(--text-primary);
+}
+.empty-state-hint {
+  font-size: 0.857rem;
+}
+
+/* --- CSV import overlay specifics --- */
+.import-preview {
+  margin-top: 12px;
+  padding: 10px;
+  background: var(--bg-primary);
+  border-radius: var(--radius-md);
+  font-size: 0.786rem;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.import-preview-row {
+  display: flex;
+  gap: 8px;
+  padding: 3px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.import-preview-row:last-child { border-bottom: none; }
+.import-result-match { color: var(--success); }
+.import-result-skip { color: var(--text-muted); }
+.import-result-error { color: var(--error); }
+
+@media (max-width: 640px) {
+  .filter-bar {
+    gap: 6px;
+  }
+  .filter-bar select {
+    min-width: 0;
+    flex: 1;
+  }
+  .media-card {
+    padding: 10px 12px;
+  }
+  .card-actions {
+    opacity: 1;
+  }
+}

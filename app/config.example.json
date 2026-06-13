@@ -1,0 +1,12 @@
+{
+  "libraries": [
+    { "name": "Music", "path": "/media/music" },
+    { "name": "Video", "path": "/media/video" }
+  ],
+  "dbPath": "/data/db/reel.sqlite",
+  "port": 32410,
+  "allowedExtensions": [
+    "mp4", "mkv", "webm", "avi", "mov", "m4v",
+    "mp3", "m4a", "wav", "flac", "ogg", "opus", "aac", "wma"
+  ]
+}

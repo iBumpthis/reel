@@ -1,0 +1,24 @@
+services:
+  reel:
+    container_name: reel
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    ports:
+      - "32410:32410"
+    volumes:
+      # Config file (required)
+      - ./config.json:/app/config.json:ro
+      # Database (persistent)
+      - reel-db:/data/db
+      # Media libraries (read-only mounts)
+      - /mnt/media/music:/media/music:ro
+      - /mnt/media/video:/media/video:ro
+    environment:
+      - REEL_DB_PATH=/data/db/reel.sqlite
+      - REEL_HOST=0.0.0.0
+      - REEL_PORT=32410
+    restart: unless-stopped
+
+volumes:
+  reel-db:
