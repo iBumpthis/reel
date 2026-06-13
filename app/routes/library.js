@@ -51,7 +51,7 @@ export default async function libraryRoutes(fastify) {
 
   fastify.get('/api/library', async (request, reply) => {
     const {
-      lib, type, ext, tag, q,
+      lib, type, ext, tag, q, artist,
       sort = 'mtime',
       order = 'desc',
       limit: rawLimit = '50',
@@ -84,6 +84,10 @@ export default async function libraryRoutes(fastify) {
     if (ext) {
       conditions.push('m.ext = @ext');
       params.ext = ext.toLowerCase();
+    }
+    if (artist) {
+      conditions.push('m.artist = @artist');
+      params.artist = artist;
     }
     if (tag) {
       // Support comma-separated tags (AND logic — item must have all tags)

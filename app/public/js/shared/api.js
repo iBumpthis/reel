@@ -70,6 +70,11 @@ export function getTags() {
   return request('/api/tags');
 }
 
+/** GET /api/artists → { artists: [{ name, count }] } */
+export function getArtists() {
+  return request('/api/artists');
+}
+
 /** POST /api/media/:id/tags → replace tags for media */
 export function setMediaTags(id, tags) {
   return request(`/api/media/${encodeURIComponent(id)}/tags`, {

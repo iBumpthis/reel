@@ -27,6 +27,19 @@ export default async function tagRoutes(fastify) {
     return { tags: allTags.all() };
   });
 
+  // GET /api/artists
+  const allArtists = db.prepare(`
+    SELECT artist AS name, COUNT(*) AS count
+    FROM media
+    WHERE artist IS NOT NULL AND artist != ''
+    GROUP BY artist
+    ORDER BY artist ASC
+  `);
+
+  fastify.get('/api/artists', async () => {
+    return { artists: allArtists.all() };
+  });
+
   // POST /api/media/:id/tags — replace-all semantics
   fastify.post('/api/media/:id/tags', async (request, reply) => {
     const { id } = request.params;
