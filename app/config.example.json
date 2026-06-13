@@ -8,5 +8,7 @@
   "allowedExtensions": [
     "mp4", "mkv", "webm", "avi", "mov", "m4v",
     "mp3", "m4a", "wav", "flac", "ogg", "opus", "aac", "wma"
-  ]
+  ],
+  "autoTagDepth": 0,
+  "autoTagExclude": []
 }

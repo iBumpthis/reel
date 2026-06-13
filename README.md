@@ -51,6 +51,30 @@ override file values where noted.
 | `port` | No | `REEL_PORT` | Default `32410`. |
 | `host` | No | `REEL_HOST` | Default `0.0.0.0`. |
 | `allowedExtensions` | No | — | File extensions to index. Default includes all supported formats. |
+| `autoTagDepth` | No | — | Number of directory segments (from library root) to auto-tag on scan. Default `0` (disabled). |
+| `autoTagExclude` | No | — | Array of directory names to skip when auto-tagging (case-insensitive). |
+
+### Auto-Tagging
+
+When `autoTagDepth` is set to a value greater than 0, the scanner automatically
+creates tags from the directory path of each media file relative to its library
+root.
+
+For example, with `autoTagDepth: 2` and a library rooted at `/media/video`, a
+file at `/media/video/Concerts/EDC Las Vegas 2026/set.mp4` produces two path
+segments: `Concerts` and `EDC Las Vegas 2026`. Each becomes a tag unless it
+appears in `autoTagExclude`.
+
+```json
+{
+  "autoTagDepth": 2,
+  "autoTagExclude": ["Concerts", "Music", "Video", "Misc"]
+}
+```
+
+With this config, the file above would be auto-tagged `EDC Las Vegas 2026`
+(the `Concerts` segment is excluded). Tags are additive — auto-tagging never
+removes existing tags, and manually-set tags are unaffected.
 
 ## Usage
 
@@ -76,8 +100,10 @@ trigger it.
 Browse, search, filter, and edit your media collection. Features include:
 
 - Full-text search across filenames, titles, artists, and descriptions
-- Filter by library, media type, file extension, and tags
+- Sidebar browse panel with artists, tags, and libraries
+- Filter by clicking artists, tags, or libraries in the sidebar
 - Sort by title, artist, year, modification time, size, or creation date
+- Responsive multi-column card grid
 - Inline metadata editing (title, artist, year, description, tags)
 - Tag autocomplete from existing tags
 - CSV metadata import for bulk updates
@@ -155,8 +181,15 @@ not the host path).
 
 ```bash
 cd /path/to/reel/deploy
+
+# First time only: make deploy.sh executable
+chmod +x deploy.sh
+
 ./deploy.sh
 ```
+
+If you prefer not to set the execute bit, you can also run `bash deploy.sh`
+directly.
 
 `deploy.sh` pulls the latest code, rebuilds the container, and restarts.
 
@@ -280,6 +313,7 @@ with appropriate HTTP status codes.
 | DELETE | `/api/media/:id/markers` | Clear all markers |
 | GET | `/api/media/:id/markers/export` | Markers as re-importable plain text |
 | GET | `/api/tags` | All tags with usage counts |
+| GET | `/api/artists` | All artists with media counts |
 | POST | `/api/media/:id/tags` | Replace tags for a media item |
 | POST | `/api/scan` | Trigger library scan |
 | POST | `/api/import` | Bulk metadata import (CSV or JSON) |
@@ -294,6 +328,7 @@ with appropriate HTTP status codes.
 | `lib` | Filter by library name |
 | `type` | `audio` or `video` |
 | `ext` | Filter by file extension |
+| `artist` | Filter by exact artist name |
 | `tag` | Comma-separated tag names (AND logic) |
 | `sort` | `title`, `artist`, `year`, `mtime`, `size`, `created` (default: `mtime`) |
 | `order` | `asc` or `desc` (default: `desc`) |
@@ -328,6 +363,11 @@ VA-API hardware acceleration is enabled. See
 - **Database:** SQLite via better-sqlite3 (with FTS5 for full-text search)
 - **Frontend:** Vanilla JS, HTML, CSS (no build step, no framework)
 - **Container:** Docker on node:24-slim
+
+## Versioning
+
+See [docs/versioning.md](docs/versioning.md) for the release history and
+planned roadmap.
 
 ## License
 

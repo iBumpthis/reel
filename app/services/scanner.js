@@ -49,6 +49,8 @@ async function* walkDir(dir, counters) {
  */
 export async function scanLibraries(config, db) {
   const allowedSet = new Set(config.allowedExtensions);
+  const autoTagDepth = config.autoTagDepth || 0;
+  const autoTagExcludeSet = new Set((config.autoTagExclude || []).map(s => s.toLowerCase()));
 
   // Generate a unique scan ID (monotonic counter)
   const scanId = Date.now();
@@ -72,6 +74,12 @@ export async function scanLibraries(config, db) {
   const deleteStaleForLibrary = db.prepare(
     'DELETE FROM media WHERE library_id = ? AND last_seen_scan < ?'
   );
+
+  // Auto-tag prepared statements
+  const findTag = db.prepare('SELECT id FROM tags WHERE normalized = ?');
+  const insertTag = db.prepare('INSERT INTO tags (name, normalized) VALUES (@name, @normalized)');
+  const linkTag = db.prepare('INSERT OR IGNORE INTO media_tags (media_id, tag_id) VALUES (@media_id, @tag_id)');
+  const getMediaByPath = db.prepare('SELECT id FROM media WHERE abs_path = ?');
 
   let totalUpserts = 0;
   let totalDeletes = 0;
@@ -122,6 +130,28 @@ export async function scanLibraries(config, db) {
           year,
           last_seen_scan: scanId,
         });
+
+        // Auto-tag from directory path segments
+        if (autoTagDepth > 0) {
+          // Get the media ID (works for both insert and on-conflict update)
+          const mediaRow = getMediaByPath.get(absPath);
+          if (mediaRow) {
+            const segments = relPath.split(/[/\\]/).slice(0, -1); // drop filename
+            const tagSegments = segments
+              .slice(0, autoTagDepth)
+              .filter(seg => seg && !autoTagExcludeSet.has(seg.toLowerCase()));
+
+            for (const tagName of tagSegments) {
+              const normalized = tagName.toLowerCase();
+              let tagRow = findTag.get(normalized);
+              if (!tagRow) {
+                const tagResult = insertTag.run({ name: tagName, normalized });
+                tagRow = { id: tagResult.lastInsertRowid };
+              }
+              linkTag.run({ media_id: mediaRow.id, tag_id: tagRow.id });
+            }
+          }
+        }
 
         libUpserts++;
       }

@@ -1,6 +1,7 @@
 /**
  * Reel — Library page
  * Browse, search, filter, edit metadata, manage tags, scan, import.
+ * v1.1: sidebar browse (artists, tags, libraries), multi-column grid.
  */
 import { fmtBytes, debounce, escHtml, toast } from './shared/utils.js';
 import * as api from './shared/api.js';
@@ -13,12 +14,9 @@ const elFooterVersion = document.getElementById('footerVersion');
 const elSearchInput = document.getElementById('searchInput');
 const elScanBtn = document.getElementById('scanBtn');
 const elScanStatus = document.getElementById('scanStatus');
-const elLibFilter = document.getElementById('libFilter');
-const elTypeFilter = document.getElementById('typeFilter');
-const elExtFilter = document.getElementById('extFilter');
 const elSortField = document.getElementById('sortField');
 const elSortOrder = document.getElementById('sortOrder');
-const elActiveTagFilters = document.getElementById('activeTagFilters');
+const elActiveFilters = document.getElementById('activeFilters');
 const elResultCount = document.getElementById('resultCount');
 const elMediaGrid = document.getElementById('mediaGrid');
 const elLoadMore = document.getElementById('loadMore');
@@ -29,19 +27,24 @@ const elImportBtn = document.getElementById('importBtn');
 const elImportStatus = document.getElementById('importStatus');
 const elImportResult = document.getElementById('importResult');
 const elImportLink = document.getElementById('importLink');
+const elSidebar = document.getElementById('sidebar');
+const elSidebarToggle = document.getElementById('sidebarToggle');
+const elSidebarLibraries = document.getElementById('sidebarLibraries');
+const elSidebarArtists = document.getElementById('sidebarArtists');
+const elSidebarTags = document.getElementById('sidebarTags');
 
 // ============================================================
 // State
 // ============================================================
-let allTags = [];        // { id, name, count } from GET /api/tags
-let activeTagFilter = []; // normalized tag names currently filtering
+let allTags = [];
+let allArtists = [];
+let allLibraries = [];
+let activeTagFilter = [];
+let activeLibFilter = null;
+let activeArtistFilter = null;
 let nextCursor = null;
 let totalCount = 0;
-let currentEditId = null; // id of card currently in edit mode
-let librariesLoaded = false;
-
-// Known extensions for filter dropdown (populated from first load)
-const knownExts = new Set();
+let currentEditId = null;
 
 // ============================================================
 // Version
@@ -53,13 +56,156 @@ api.getHealth().then(d => {
 }).catch(() => {});
 
 // ============================================================
-// Tags cache
+// Sidebar — mobile toggle
 // ============================================================
-async function refreshTags() {
-  try {
-    const data = await api.getTags();
-    allTags = data.tags || [];
-  } catch { /* silent */ }
+let backdropEl = null;
+
+function openSidebar() {
+  elSidebar.classList.add('open');
+  if (!backdropEl) {
+    backdropEl = document.createElement('div');
+    backdropEl.className = 'sidebar-backdrop';
+    backdropEl.addEventListener('click', closeSidebar);
+  }
+  document.body.appendChild(backdropEl);
+}
+
+function closeSidebar() {
+  elSidebar.classList.remove('open');
+  if (backdropEl && backdropEl.parentNode) {
+    backdropEl.parentNode.removeChild(backdropEl);
+  }
+}
+
+elSidebarToggle.addEventListener('click', () => {
+  if (elSidebar.classList.contains('open')) closeSidebar();
+  else openSidebar();
+});
+
+// ============================================================
+// Sidebar — rendering
+// ============================================================
+function renderSidebarLibraries() {
+  elSidebarLibraries.innerHTML = '';
+
+  const allItem = createSidebarItem('All libraries', null, !activeLibFilter);
+  allItem.addEventListener('click', () => {
+    activeLibFilter = null;
+    renderSidebarLibraries();
+    loadLibrary();
+  });
+  elSidebarLibraries.appendChild(allItem);
+
+  for (const lib of allLibraries) {
+    const item = createSidebarItem(lib.name, null, activeLibFilter === lib.name);
+    item.addEventListener('click', () => {
+      activeLibFilter = activeLibFilter === lib.name ? null : lib.name;
+      renderSidebarLibraries();
+      loadLibrary();
+      closeSidebar();
+    });
+    elSidebarLibraries.appendChild(item);
+  }
+}
+
+function renderSidebarArtists() {
+  elSidebarArtists.innerHTML = '';
+
+  const allItem = createSidebarItem('All artists', null, !activeArtistFilter);
+  allItem.addEventListener('click', () => {
+    activeArtistFilter = null;
+    renderSidebarArtists();
+    renderActiveFilters();
+    loadLibrary();
+  });
+  elSidebarArtists.appendChild(allItem);
+
+  for (const a of allArtists) {
+    const item = createSidebarItem(a.name, a.count, activeArtistFilter === a.name);
+    item.addEventListener('click', () => {
+      activeArtistFilter = activeArtistFilter === a.name ? null : a.name;
+      renderSidebarArtists();
+      renderActiveFilters();
+      loadLibrary();
+      closeSidebar();
+    });
+    elSidebarArtists.appendChild(item);
+  }
+}
+
+function renderSidebarTags() {
+  elSidebarTags.innerHTML = '';
+
+  for (const t of allTags) {
+    const pill = document.createElement('span');
+    const isActive = activeTagFilter.includes(t.name.toLowerCase());
+    pill.className = `sidebar-tag${isActive ? ' active' : ''}`;
+    pill.innerHTML = `${escHtml(t.name)} <span class="sidebar-tag-count">${t.count}</span>`;
+    pill.addEventListener('click', () => {
+      const norm = t.name.toLowerCase();
+      if (activeTagFilter.includes(norm)) {
+        activeTagFilter = activeTagFilter.filter(x => x !== norm);
+      } else {
+        activeTagFilter.push(norm);
+      }
+      renderSidebarTags();
+      renderActiveFilters();
+      loadLibrary();
+      closeSidebar();
+    });
+    elSidebarTags.appendChild(pill);
+  }
+}
+
+function createSidebarItem(name, count, active) {
+  const el = document.createElement('div');
+  el.className = `sidebar-item${active ? ' active' : ''}`;
+  el.innerHTML = `
+    <span class="sidebar-item-name">${escHtml(name)}</span>
+    ${count != null ? `<span class="sidebar-item-count">${count}</span>` : ''}`;
+  return el;
+}
+
+// ============================================================
+// Active filter chips (above grid)
+// ============================================================
+function renderActiveFilters() {
+  elActiveFilters.innerHTML = '';
+
+  if (activeLibFilter) {
+    elActiveFilters.appendChild(createFilterChip('Library', activeLibFilter, () => {
+      activeLibFilter = null;
+      renderSidebarLibraries();
+      renderActiveFilters();
+      loadLibrary();
+    }));
+  }
+
+  if (activeArtistFilter) {
+    elActiveFilters.appendChild(createFilterChip('Artist', activeArtistFilter, () => {
+      activeArtistFilter = null;
+      renderSidebarArtists();
+      renderActiveFilters();
+      loadLibrary();
+    }));
+  }
+
+  for (const tag of activeTagFilter) {
+    elActiveFilters.appendChild(createFilterChip('Tag', tag, () => {
+      activeTagFilter = activeTagFilter.filter(t => t !== tag);
+      renderSidebarTags();
+      renderActiveFilters();
+      loadLibrary();
+    }));
+  }
+}
+
+function createFilterChip(label, value, onRemove) {
+  const chip = document.createElement('span');
+  chip.className = 'filter-chip';
+  chip.innerHTML = `<span class="filter-chip-label">${escHtml(label)}</span>${escHtml(value)} <span class="filter-chip-remove">×</span>`;
+  chip.querySelector('.filter-chip-remove').addEventListener('click', onRemove);
+  return chip;
 }
 
 // ============================================================
@@ -67,16 +213,12 @@ async function refreshTags() {
 // ============================================================
 function getFilterParams() {
   const params = {};
-  const lib = elLibFilter.value;
-  const type = elTypeFilter.value;
-  const ext = elExtFilter.value;
   const q = elSearchInput.value.trim();
   const sort = elSortField.value;
   const order = elSortOrder.value;
 
-  if (lib) params.lib = lib;
-  if (type) params.type = type;
-  if (ext) params.ext = ext;
+  if (activeLibFilter) params.lib = activeLibFilter;
+  if (activeArtistFilter) params.artist = activeArtistFilter;
   if (q) params.q = q;
   if (sort) params.sort = sort;
   if (order) params.order = order;
@@ -94,26 +236,10 @@ async function loadLibrary(append = false) {
   try {
     const data = await api.getLibrary(params);
 
-    // Populate library filter (once)
-    if (!librariesLoaded && data.libraries) {
-      for (const lib of data.libraries) {
-        const opt = document.createElement('option');
-        opt.value = lib.name;
-        opt.textContent = lib.name;
-        elLibFilter.appendChild(opt);
-      }
-      librariesLoaded = true;
-    }
-
-    // Track known extensions
-    for (const item of data.items) {
-      if (item.ext && !knownExts.has(item.ext)) {
-        knownExts.add(item.ext);
-        const opt = document.createElement('option');
-        opt.value = item.ext;
-        opt.textContent = item.ext.toUpperCase();
-        elExtFilter.appendChild(opt);
-      }
+    // Store libraries (for sidebar, only update if we haven't loaded artists yet)
+    if (data.libraries && allLibraries.length === 0) {
+      allLibraries = data.libraries;
+      renderSidebarLibraries();
     }
 
     nextCursor = data.nextCursor;
@@ -159,16 +285,14 @@ function renderCard(item) {
   card.className = 'media-card';
   card.dataset.id = item.id;
 
-  // Title display
   const displayTitle = item.title || item.filename;
   const yearDisplay = item.year ? `<span class="card-year">${escHtml(String(item.year))}</span>` : '';
 
-  // Artist
   const artistHtml = item.artist
     ? `<div class="card-artist">${escHtml(item.artist)}</div>`
     : '';
 
-  // Tags
+  // Tags as inline pills
   let tagsHtml = '';
   if (item.tags && item.tags.length > 0) {
     tagsHtml = `<div class="card-tags">${
@@ -189,17 +313,17 @@ function renderCard(item) {
           ${yearDisplay}
         </div>
         ${artistHtml}
-        <div class="card-meta">
-          <span class="badge badge-${item.mediaType}">${item.mediaType}</span>
-          <span class="card-meta-sep"></span>
-          <span>${item.ext.toUpperCase()}</span>
-          <span class="card-meta-sep"></span>
-          <span>${fmtBytes(item.sizeBytes)}</span>
-          <span class="card-meta-sep"></span>
-          <span>${escHtml(item.libraryName)}</span>
-          ${markerHtml ? `<span class="card-meta-sep"></span>${markerHtml}` : ''}
+        <div class="card-info-row">
+          <div class="card-meta">
+            <span class="badge badge-${item.mediaType}">${item.mediaType}</span>
+            <span class="card-meta-sep"></span>
+            <span>${item.ext.toUpperCase()}</span>
+            <span class="card-meta-sep"></span>
+            <span>${fmtBytes(item.sizeBytes)}</span>
+            ${markerHtml ? `<span class="card-meta-sep"></span>${markerHtml}` : ''}
+          </div>
+          ${tagsHtml}
         </div>
-        ${tagsHtml}
       </div>
       <div class="card-actions">
         <button class="btn-sm btn-icon" title="Edit metadata" data-edit="${item.id}">✎</button>
@@ -213,7 +337,8 @@ function renderCard(item) {
       const tag = pill.dataset.tag;
       if (!activeTagFilter.includes(tag.toLowerCase())) {
         activeTagFilter.push(tag.toLowerCase());
-        renderActiveTagFilters();
+        renderSidebarTags();
+        renderActiveFilters();
         loadLibrary();
       }
     });
@@ -232,34 +357,15 @@ function renderCard(item) {
 }
 
 // ============================================================
-// Active tag filter chips
-// ============================================================
-function renderActiveTagFilters() {
-  elActiveTagFilters.innerHTML = '';
-  for (const tag of activeTagFilter) {
-    const chip = document.createElement('span');
-    chip.className = 'tag-pill filter-tag-active';
-    chip.innerHTML = `${escHtml(tag)} <span class="tag-pill-remove" data-remove-tag="${escHtml(tag)}">×</span>`;
-    chip.querySelector('.tag-pill-remove').addEventListener('click', () => {
-      activeTagFilter = activeTagFilter.filter(t => t !== tag);
-      renderActiveTagFilters();
-      loadLibrary();
-    });
-    elActiveTagFilters.appendChild(chip);
-  }
-}
-
-// ============================================================
 // Inline metadata editing
 // ============================================================
 function toggleEdit(card, item) {
-  // Close any open edit
   const existing = document.querySelector('.edit-form');
   if (existing) {
     existing.remove();
     if (currentEditId === item.id) {
       currentEditId = null;
-      return; // toggle off
+      return;
     }
   }
   currentEditId = item.id;
@@ -302,7 +408,6 @@ function toggleEdit(card, item) {
 
   card.appendChild(form);
 
-  // Render current tags
   const elTagsCurrent = form.querySelector('#editTagsCurrent');
   function renderEditTags() {
     elTagsCurrent.innerHTML = '';
@@ -335,7 +440,6 @@ function toggleEdit(card, item) {
       .slice(0, 8);
 
     if (matches.length === 0) {
-      // Show "create new" option
       elAutocomplete.innerHTML = `<div class="tag-autocomplete-item" data-new="${escHtml(elTagInput.value.trim())}">Create "${escHtml(elTagInput.value.trim())}"</div>`;
     } else {
       elAutocomplete.innerHTML = matches.map(t =>
@@ -374,7 +478,6 @@ function toggleEdit(card, item) {
     }
   });
 
-  // Close autocomplete on outside click
   document.addEventListener('click', function closeAc(e) {
     if (!form.contains(e.target)) {
       elAutocomplete.classList.add('hidden');
@@ -400,18 +503,14 @@ function toggleEdit(card, item) {
     const description = form.querySelector('#editDesc').value.trim();
 
     try {
-      // Update metadata
       await api.updateMedia(item.id, { title, artist, year, description });
-      // Update tags
       await api.setMediaTags(item.id, itemTags);
-      // Refresh tags cache
-      await refreshTags();
+      await refreshSidebarData();
 
       elStatus.textContent = '';
       form.remove();
       currentEditId = null;
       toast('Saved', 'success');
-      // Reload to reflect changes
       loadLibrary();
     } catch (err) {
       elStatus.textContent = `Error: ${err.message}`;
@@ -439,6 +538,7 @@ elScanBtn.addEventListener('click', async () => {
       toast(`Scan complete: ${msg}`, 'success');
     }
     setTimeout(() => { elScanStatus.textContent = ''; }, 5000);
+    await refreshSidebarData();
     loadLibrary();
   } catch (err) {
     elScanStatus.textContent = 'Scan failed';
@@ -483,8 +583,8 @@ elImportBtn.addEventListener('click', async () => {
       ).join('');
     }
 
+    await refreshSidebarData();
     loadLibrary();
-    await refreshTags();
   } catch (err) {
     elImportStatus.textContent = `Error: ${err.message}`;
   } finally {
@@ -498,9 +598,6 @@ elImportBtn.addEventListener('click', async () => {
 const reloadDebounced = debounce(() => loadLibrary(), 250);
 
 elSearchInput.addEventListener('input', reloadDebounced);
-elLibFilter.addEventListener('change', () => loadLibrary());
-elTypeFilter.addEventListener('change', () => loadLibrary());
-elExtFilter.addEventListener('change', () => loadLibrary());
 elSortField.addEventListener('change', () => loadLibrary());
 elSortOrder.addEventListener('change', () => loadLibrary());
 
@@ -518,15 +615,15 @@ document.querySelectorAll('[data-close]').forEach(el => {
 // Keyboard shortcuts
 // ============================================================
 document.addEventListener('keydown', (e) => {
-  // Focus search on /
   if (e.key === '/' && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
     e.preventDefault();
     elSearchInput.focus();
   }
-  // Escape closes overlays and clears search
   if (e.key === 'Escape') {
     if (!elImportOverlay.classList.contains('hidden')) {
       elImportOverlay.classList.add('hidden');
+    } else if (elSidebar.classList.contains('open')) {
+      closeSidebar();
     } else if (document.activeElement === elSearchInput) {
       elSearchInput.value = '';
       elSearchInput.blur();
@@ -536,10 +633,26 @@ document.addEventListener('keydown', (e) => {
 });
 
 // ============================================================
+// Data refresh helpers
+// ============================================================
+async function refreshSidebarData() {
+  try {
+    const [tagData, artistData] = await Promise.all([
+      api.getTags(),
+      api.getArtists(),
+    ]);
+    allTags = tagData.tags || [];
+    allArtists = artistData.artists || [];
+    renderSidebarTags();
+    renderSidebarArtists();
+  } catch { /* silent */ }
+}
+
+// ============================================================
 // Init
 // ============================================================
 async function init() {
-  await refreshTags();
+  await refreshSidebarData();
   await loadLibrary();
 }
 

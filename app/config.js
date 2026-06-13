@@ -35,6 +35,8 @@ export function loadConfig() {
     dbPath: process.env.REEL_DB_PATH ?? file.dbPath,
     libraries: file.libraries,
     allowedExtensions: file.allowedExtensions ?? DEFAULT_EXTENSIONS,
+    autoTagDepth: file.autoTagDepth ?? 0,
+    autoTagExclude: file.autoTagExclude ?? [],
   };
 
   // Validate required fields
@@ -64,6 +66,13 @@ export function loadConfig() {
   config.allowedExtensions = config.allowedExtensions.map(e =>
     e.toLowerCase().replace(/^\./, '')
   );
+
+  // Validate and normalize auto-tag config
+  config.autoTagDepth = Math.max(0, Math.floor(Number(config.autoTagDepth) || 0));
+  if (!Array.isArray(config.autoTagExclude)) {
+    config.autoTagExclude = [];
+  }
+  config.autoTagExclude = config.autoTagExclude.map(s => String(s).toLowerCase());
 
   return config;
 }
