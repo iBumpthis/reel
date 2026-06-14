@@ -100,6 +100,7 @@ async function load() {
     initMarkers(state, els);
     initBrowse(state, els);
     initDescription();
+    initExportMarkers();
     initImport();
 
   } catch (err) {
@@ -145,6 +146,27 @@ function initDescription() {
       toast('Saved', 'success');
     } catch (err) {
       elDescStatus.textContent = `Error: ${err.message}`;
+    }
+  });
+}
+
+// ============================================================
+// Export markers
+// ============================================================
+function initExportMarkers() {
+  document.getElementById('exportMarkers').addEventListener('click', async () => {
+    if (!state.markers || state.markers.length === 0) {
+      toast('No markers to export', 'error');
+      return;
+    }
+
+    try {
+      const text = await api.exportMarkers(state.mediaId);
+      // Copy to clipboard
+      await navigator.clipboard.writeText(text);
+      toast(`${state.markers.length} marker${state.markers.length !== 1 ? 's' : ''} copied to clipboard`, 'success');
+    } catch (err) {
+      toast(`Export failed: ${err.message}`, 'error');
     }
   });
 }

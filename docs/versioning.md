@@ -73,16 +73,38 @@ Full backend and frontend built across four development sessions:
   metadata from embedded tags. Existing DBs will work but won't benefit from
   ID3 data for previously scanned files until the next fresh scan.
 
+### v1.3.0 — Marker Workflow + Polish
+
+- **Per-marker PATCH endpoint:** `PATCH /api/media/:id/markers/:markerId`
+  updates individual marker fields (label, startSeconds, endSeconds) without
+  replacing all markers. Uses the `'field' in body` dynamic SET pattern.
+- **Marker timestamp inline editing:** Edit button on marker rows now shows
+  both a timestamp input and a label input. Uses per-marker PATCH instead of
+  the previous replace-all approach. Invalid time formats show an error toast.
+  If the timestamp changes, markers re-sort and the list re-renders.
+- **Markers CSV export:** `GET /api/export?format=markers-csv` exports all
+  markers as CSV with columns: `filename`, `rel_path`, `start`, `end`, `label`.
+  Filterable by library with `?lib=name`. Link added to library page footer.
+- **Bulk markers CSV import:** `POST /api/import/markers` accepts the same
+  CSV format. Replace-all semantics per matched media item.
+- **Export markers from player:** "Export Markers" button copies the tracklist
+  text to clipboard via the existing markers/export endpoint.
+- **Edit form CSS fix:** Card with an open inline edit form now spans the full
+  grid width (`grid-column: 1 / -1`) with a highlighted border, preventing
+  overlap with adjacent cards on smaller screens.
+- **Scan progress indicator:** Animated spinner with "Scanning libraries..."
+  text appears in the media grid during scan. Replaces the previous
+  toolbar-text-only feedback.
+- **Stale marker ID fix:** After marker deletion (which uses replace-all POST),
+  markers are reloaded from the server to prevent subsequent edits from
+  targeting invalidated row IDs.
+- **Deployment hardening (v1.2.1):** `.dockerignore` added to prevent host
+  `node_modules` from poisoning Docker builds. Dockerfile `EXPOSE` corrected
+  to 32411. Lockfile regenerated with correct version and dependency tree.
+
 ---
 
 ## Planned
-
-### v1.3 — Marker Workflow
-
-- Marker timestamp inline editing (not just label editing).
-- Per-marker PATCH endpoint (original plan spec, never built in v1.0).
-- Markers included in CSV export/import (currently metadata-only).
-- Individual marker export/import UI surfaced more prominently.
 
 ### v1.4 — Technical Debt + Branding
 
@@ -91,8 +113,8 @@ Documented tradeoffs from v1.0 and deferred polish:
 - Header logo/branding (SVG icon in place of plain "Reel" text).
 - CSV export formula injection escaping (leading `=`).
 - `USER node` in Dockerfile (one-line hardening + volume ownership).
-- Lockfile regeneration under Node 24.
 - FTS5 rebuild-on-every-edit → trigger-based sync (scale blocker).
+- Evaluate: scan tag-read optimization (skip when mtime unchanged).
 - Evaluate: benign inline-edit double-save race (Enter + blur).
 
 ### v1.5 — Visualizer Upgrades

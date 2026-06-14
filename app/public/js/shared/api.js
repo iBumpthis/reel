@@ -65,6 +65,20 @@ export function clearMarkers(id) {
   });
 }
 
+/** PATCH /api/media/:id/markers/:markerId — update single marker */
+export function patchMarker(mediaId, markerId, body) {
+  return request(`/api/media/${encodeURIComponent(mediaId)}/markers/${encodeURIComponent(markerId)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+/** GET /api/media/:id/markers/export — text format */
+export function exportMarkers(id) {
+  return fetch(`/api/media/${encodeURIComponent(id)}/markers/export`).then(r => r.text());
+}
+
 /** GET /api/tags → { tags: [{ id, name, count }] } */
 export function getTags() {
   return request('/api/tags');

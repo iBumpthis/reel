@@ -78,71 +78,160 @@ function renderMarkers() {
 }
 
 // ============================================================
-// Inline label editing
+// Inline marker editing (label + timestamp)
 // ============================================================
 function startInlineEdit(idx, row) {
   const mk = state.markers[idx];
+  const originalLabel = mk.label;
+  const originalStart = mk.startSeconds;
+
+  // Replace the row content with edit fields
+  const timeEl = row.querySelector('.marker-time');
   const labelEl = row.querySelector('.marker-label');
-  const original = mk.label;
+  const actionsEl = row.querySelector('.marker-edit-actions');
 
-  const input = document.createElement('input');
-  input.type = 'text';
-  input.className = 'marker-label-input';
-  input.value = original;
+  // Time input
+  const timeInput = document.createElement('input');
+  timeInput.type = 'text';
+  timeInput.className = 'marker-time-input';
+  timeInput.value = fmtTime(originalStart);
+  timeInput.title = 'Timestamp (M:SS or H:MM:SS)';
+  timeEl.replaceWith(timeInput);
 
-  labelEl.replaceWith(input);
-  input.focus();
-  input.select();
+  // Label input
+  const labelInput = document.createElement('input');
+  labelInput.type = 'text';
+  labelInput.className = 'marker-label-input';
+  labelInput.value = originalLabel;
+  labelEl.replaceWith(labelInput);
+
+  // Replace action buttons with save/cancel
+  actionsEl.innerHTML = `
+    <button class="marker-edit-btn save" data-action="save" title="Save (Enter)">✓</button>
+    <button class="marker-edit-btn" data-action="cancel" title="Cancel (Esc)">✕</button>`;
+  actionsEl.style.opacity = '1';
+
+  labelInput.focus();
+  labelInput.select();
 
   async function save() {
-    const newLabel = input.value.trim();
-    if (!newLabel || newLabel === original) {
-      cancel();
+    const newLabel = labelInput.value.trim();
+    const newTimeStr = timeInput.value.trim();
+
+    if (!newLabel) { cancel(); return; }
+
+    // Parse the time input
+    const newStart = parseTimeInput(newTimeStr);
+    if (newStart === null) {
+      timeInput.classList.add('input-error');
+      toast('Invalid time format (use M:SS or H:MM:SS)', 'error');
+      timeInput.focus();
       return;
     }
 
-    mk.label = newLabel;
-    // Replace all markers on backend
-    try {
-      await api.setMarkers(state.mediaId, {
-        markers: state.markers.map((m, i) => ({
-          startSeconds: m.startSeconds,
-          endSeconds: m.endSeconds,
-          label: m.label,
-          sortOrder: i,
-        })),
-      });
+    const labelChanged = newLabel !== originalLabel;
+    const timeChanged = newStart !== originalStart;
 
-      const span = document.createElement('span');
-      span.className = 'marker-label';
-      span.textContent = newLabel;
-      input.replaceWith(span);
+    if (!labelChanged && !timeChanged) { cancel(); return; }
+
+    // Build patch body
+    const patch = {};
+    if (labelChanged) patch.label = newLabel;
+    if (timeChanged) patch.startSeconds = newStart;
+
+    try {
+      await api.patchMarker(state.mediaId, mk.id, patch);
+
+      mk.label = newLabel;
+      mk.startSeconds = newStart;
+
+      // If time changed, re-sort markers and re-render full list
+      if (timeChanged) {
+        state.markers.sort((a, b) => a.startSeconds - b.startSeconds);
+        renderMarkers();
+      } else {
+        restoreRow(row, idx);
+      }
       toast('Marker updated', 'success');
     } catch (err) {
-      mk.label = original;
       cancel();
       toast(`Save failed: ${err.message}`, 'error');
     }
   }
 
   function cancel() {
-    const span = document.createElement('span');
-    span.className = 'marker-label';
-    span.textContent = original;
-    input.replaceWith(span);
+    restoreRow(row, idx);
   }
 
-  input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') { e.preventDefault(); save(); }
-    if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+  function restoreRow(row, idx) {
+    const mk = state.markers[idx];
+    const timeSpan = document.createElement('span');
+    timeSpan.className = 'marker-time';
+    timeSpan.textContent = fmtTime(mk.startSeconds);
+
+    const labelSpan = document.createElement('span');
+    labelSpan.className = 'marker-label';
+    labelSpan.textContent = mk.label;
+
+    const currentTime = row.querySelector('.marker-time-input');
+    const currentLabel = row.querySelector('.marker-label-input');
+    if (currentTime) currentTime.replaceWith(timeSpan);
+    if (currentLabel) currentLabel.replaceWith(labelSpan);
+
+    actionsEl.innerHTML = `
+      <button class="marker-edit-btn" data-action="edit" title="Edit label">✎</button>
+      <button class="marker-edit-btn danger" data-action="delete" title="Delete">×</button>`;
+    actionsEl.style.opacity = '';
+
+    // Re-bind edit/delete handlers
+    actionsEl.querySelector('[data-action="edit"]').addEventListener('click', (e) => {
+      e.stopPropagation();
+      startInlineEdit(idx, row);
+    });
+    actionsEl.querySelector('[data-action="delete"]').addEventListener('click', (e) => {
+      e.stopPropagation();
+      deleteMarker(idx);
+    });
+  }
+
+  // Keyboard handlers on both inputs
+  [timeInput, labelInput].forEach(input => {
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); save(); }
+      if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+    });
   });
 
-  input.addEventListener('blur', () => {
-    // Small delay to let keydown fire first
-    setTimeout(() => {
-      if (document.contains(input)) save();
-    }, 50);
+  // Save/cancel button handlers
+  actionsEl.querySelector('[data-action="save"]').addEventListener('click', (e) => {
+    e.stopPropagation();
+    save();
   });
+  actionsEl.querySelector('[data-action="cancel"]').addEventListener('click', (e) => {
+    e.stopPropagation();
+    cancel();
+  });
+}
+
+/**
+ * Parse a time string input (M:SS or H:MM:SS) into seconds.
+ * Returns null if invalid.
+ */
+function parseTimeInput(str) {
+  const parts = str.split(':').map(Number);
+  if (parts.some(n => !Number.isFinite(n))) return null;
+
+  if (parts.length === 3) {
+    const [h, m, s] = parts;
+    if (h < 0 || m < 0 || m > 59 || s < 0 || s > 59) return null;
+    return h * 3600 + m * 60 + s;
+  }
+  if (parts.length === 2) {
+    const [m, s] = parts;
+    if (m < 0 || s < 0 || s > 59) return null;
+    return m * 60 + s;
+  }
+  return null;
 }
 
 // ============================================================
@@ -175,13 +264,27 @@ async function deleteMarker(idx) {
         sortOrder: i,
       })),
     });
-    renderMarkers();
+
+    // Reload markers from server to get fresh IDs —
+    // replace-all POST re-inserts rows, invalidating old IDs.
+    // Without this, a PATCH after delete would target a stale ID.
+    await reloadMarkers();
     toast('Marker deleted', 'success');
   } catch (err) {
     state.markers.splice(idx, 0, ...removed);
     renderMarkers();
     toast(`Delete failed: ${err.message}`, 'error');
   }
+}
+
+/**
+ * Reload markers from server into state and re-render.
+ * Called after operations that invalidate marker IDs (delete, import).
+ */
+async function reloadMarkers() {
+  const media = await api.getMedia(state.mediaId);
+  state.markers = media.markers || [];
+  renderMarkers();
 }
 
 // ============================================================
