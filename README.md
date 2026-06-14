@@ -138,6 +138,12 @@ reads embedded ID3/M4A tags and uses them for artist, title, album, year,
 and track number. This takes priority over filename parsing — embedded tags
 are used when present, with `parseFilename()` as the fallback.
 
+Embedded tags are read only when a file is first added to the database.
+Subsequent scans skip the tag read for files that already exist, since the
+scanner's upsert does not overwrite metadata fields for existing rows. If you
+re-encode a file at the same path, delete its database row and re-scan (or
+edit the metadata manually) to pick up the new embedded tags.
+
 Video files continue using filename parsing only (concert recordings rarely
 have meaningful embedded metadata).
 
@@ -215,7 +221,8 @@ volume is the only writable persistent state.
 
 The Docker setup uses a two-stage build: the first stage compiles
 `better-sqlite3`'s native module (requires python3/make/g++), and the second
-stage copies the built artifacts into a clean `node:24-slim` image.
+stage copies the built artifacts into a clean `node:24-slim` image. The
+container runs as the non-root `node` user (uid 1000) for security hardening.
 
 ```yaml
 # deploy/docker-compose.example.yml
@@ -261,6 +268,18 @@ If you prefer not to set the execute bit, you can also run `bash deploy.sh`
 directly.
 
 `deploy.sh` pulls the latest code, rebuilds the container, and restarts.
+
+**Upgrading to v1.4.0 (non-root container):** The container now runs as the
+`node` user instead of root. If you have an existing named volume for the
+database, fix its ownership before deploying:
+
+```bash
+docker run --rm -v deploy_reel-db:/data/db node:24-slim chown -R node:node /data/db
+```
+
+Replace `deploy_reel-db` with your actual volume name (check with
+`docker volume ls | grep reel`). New deployments need no action — the volume
+inherits the correct ownership from the image on first creation.
 
 ### Bare-Metal / systemd (Alternate)
 
@@ -339,6 +358,19 @@ ingested. Broken symlinks are counted and reported in the scan response
 
 A second scan request while one is already running returns `409 Conflict`.
 
+### Tag-Read Optimization
+
+Embedded metadata reading (via `music-metadata`) is the most expensive part
+of a scan on NAS storage. To avoid redundant I/O, the scanner skips tag reads
+for files that already exist in the database — only new files have their
+embedded tags parsed. This makes subsequent scans significantly faster since
+the scanner only needs to stat each file (for size and mtime) rather than
+reading its full metadata.
+
+This is safe because the scanner's upsert does not overwrite metadata fields
+(title, artist, album, year, track number) for existing rows. See
+[Embedded Metadata](#embedded-metadata-id3-tags) for the re-encode caveat.
+
 ## Format Support
 
 Reel serves media files with correct MIME types and relies on the browser for
@@ -358,6 +390,11 @@ FLAC, OGG, Opus, AAC, WMA.
 Export your full library metadata with `GET /api/export?format=csv`, edit it,
 and re-import with `POST /api/import`. See
 [docs/import-format.md](docs/import-format.md) for field details and examples.
+
+CSV exports escape cells that start with `=`, `+`, `-`, or `@` by prefixing
+them with a leading apostrophe to prevent spreadsheet formula injection. The
+apostrophe is visible in the cell but is harmless; remove it before
+re-importing if needed.
 
 ### Markers (Tracklist Text)
 

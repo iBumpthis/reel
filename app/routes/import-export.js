@@ -314,11 +314,28 @@ function parseCSVLine(line) {
   return fields;
 }
 
+/**
+ * Characters that can trigger formula execution in Excel/Sheets/LibreOffice
+ * when they appear as the first character of a CSV cell. Prefixed with a
+ * leading apostrophe to neutralize them. The apostrophe is visible in the
+ * cell but prevents formula interpretation.
+ *
+ * OWASP CSV Injection reference characters: = + - @ | \t \r
+ * We include = + - @ as these are the practical risk set for user-generated
+ * media metadata. Filenames starting with '-' are uncommon but possible;
+ * the apostrophe prefix is the accepted tradeoff for safety.
+ */
+const CSV_FORMULA_CHARS = new Set(['=', '+', '-', '@']);
+
 function toCsv(rows) {
   if (rows.length === 0) return '';
   const headers = Object.keys(rows[0]);
   const escape = (v) => {
-    const s = String(v ?? '');
+    let s = String(v ?? '');
+    // Neutralize formula injection: prefix dangerous first characters
+    if (s.length > 0 && CSV_FORMULA_CHARS.has(s[0])) {
+      s = "'" + s;
+    }
     return s.includes(',') || s.includes('"') || s.includes('\n')
       ? `"${s.replace(/"/g, '""')}"`
       : s;
