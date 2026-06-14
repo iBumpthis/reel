@@ -211,6 +211,7 @@ function draw() {
     case 'circular':   drawCircular(ctx, w, h, theme, t); break;
     case 'spectrogram': drawSpectrogram(ctx, w, h, theme, t); break;
     case 'particles':  drawParticles(ctx, w, h, theme, t); break;
+    case 'nova':       drawNova(ctx, w, h, theme, t); break;
     default:           drawBars(ctx, w, h, theme, t);
   }
 }
@@ -253,7 +254,7 @@ function drawBars(ctx, w, h, theme, t) {
 // ============================================================
 function drawLines(ctx, w, h, theme, t) {
   // Persistence decay — partial clear creates trailing effect
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.16)';
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.11)';
   ctx.fillRect(0, 0, w, h);
 
   analyser.getByteTimeDomainData(waveData);
@@ -261,13 +262,17 @@ function drawLines(ctx, w, h, theme, t) {
   const count = waveData.length;
   const centerY = h / 2;
 
-  // Layered copies with Y offset — center full opacity, outers fade
+  // Layered copies with large Y offsets — fills the full canvas height.
+  // Wide spacing keeps layers visually distinct rather than smearing
+  // into a solid mass when the music hits hard.
   const layers = [
-    { offset: 0,   alpha: 1.0  },
-    { offset: -22, alpha: 0.45 },
-    { offset:  22, alpha: 0.45 },
-    { offset: -44, alpha: 0.15 },
-    { offset:  44, alpha: 0.15 },
+    { offset: 0,    alpha: 1.0  },
+    { offset: -50,  alpha: 0.5  },
+    { offset:  50,  alpha: 0.5  },
+    { offset: -110, alpha: 0.25 },
+    { offset:  110, alpha: 0.25 },
+    { offset: -170, alpha: 0.08 },
+    { offset:  170, alpha: 0.08 },
   ];
 
   for (const layer of layers) {
@@ -319,7 +324,8 @@ function drawCircular(ctx, w, h, theme, t) {
     const barLen = val * maxBarLen;
 
     // Angle from top: right side goes clockwise, left side mirrors
-    const angleOffset = (i / halfBins) * Math.PI;
+    // Use (halfBins - 1) so the last bin lands exactly at 6 o'clock
+    const angleOffset = (i / (halfBins - 1)) * Math.PI;
     const angles = [
       -Math.PI / 2 + angleOffset,  // right half (clockwise from top)
       -Math.PI / 2 - angleOffset,  // left half (counter-clockwise from top)
@@ -351,7 +357,7 @@ function drawCircular(ctx, w, h, theme, t) {
   }
 
   // Center ring outline
-  ctx.strokeStyle = theme.color(0, usableBins, t);
+  ctx.strokeStyle = theme.color(0, halfBins, t);
   ctx.lineWidth = 1.5;
   ctx.globalAlpha = 0.3;
   ctx.beginPath();
@@ -363,7 +369,7 @@ function drawCircular(ctx, w, h, theme, t) {
 // ============================================================
 // Mode: Spectrogram (scrolling time × frequency heatmap)
 // ============================================================
-function drawSpectrogram(ctx, w, h, theme, _t) {
+function drawSpectrogram(ctx, w, h, theme, t) {
   // Clear on size change or first entry
   if (w !== spectroLastW || h !== spectroLastH) {
     ctx.fillStyle = '#000';
@@ -392,9 +398,12 @@ function drawSpectrogram(ctx, w, h, theme, _t) {
     if (val < 3) continue; // skip silence for performance
 
     const y = h - (i + 1) * sliceHeight;
-    ctx.fillStyle = theme.amplitudeColor(val);
+    // Color from frequency position (via theme), intensity from amplitude
+    ctx.fillStyle = theme.color(i, usableBins, t);
+    ctx.globalAlpha = Math.max(0.08, (val / 255) * (val / 255));
     ctx.fillRect(w - SPECTRO_SCROLL_PX, y, SPECTRO_SCROLL_PX, Math.ceil(sliceHeight));
   }
+  ctx.globalAlpha = 1.0;
 }
 
 // ============================================================
@@ -464,7 +473,100 @@ function drawParticles(ctx, w, h, theme, t) {
 }
 
 // ============================================================
-// Start / stop
+// Mode: Nova (particles on steroids — big glowing orbs)
+// ============================================================
+const NOVA_COUNT = 100;
+let novaParticles = [];
+let novaW = 0;
+let novaH = 0;
+
+function ensureNova(w, h) {
+  if (novaParticles.length === NOVA_COUNT && novaW === w && novaH === h) return;
+  novaW = w;
+  novaH = h;
+  novaParticles = [];
+  for (let i = 0; i < NOVA_COUNT; i++) {
+    novaParticles.push({
+      x: Math.random() * w,
+      y: Math.random() * h,
+      vx: (Math.random() - 0.5) * 1.2,
+      vy: (Math.random() - 0.5) * 1.2,
+      size: Math.random() * 5 + 3,
+      bin: Math.floor(Math.random() * 64),
+    });
+  }
+}
+
+function drawNova(ctx, w, h, theme, t) {
+  // Slower trail decay — orbs leave longer streaks
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.08)';
+  ctx.fillRect(0, 0, w, h);
+
+  ensureNova(w, h);
+  analyser.getByteFrequencyData(freqData);
+
+  const binCount = analyser.frequencyBinCount;
+  const bassEnd = Math.floor(binCount * 0.08);
+  const midStart = Math.floor(binCount * 0.08);
+  const midEnd = Math.floor(binCount * 0.3);
+
+  let bassEnergy = 0;
+  for (let i = 0; i < bassEnd; i++) bassEnergy += freqData[i];
+  bassEnergy = bassEnergy / Math.max(1, bassEnd) / 255;
+
+  let midEnergy = 0;
+  for (let i = midStart; i < midEnd; i++) midEnergy += freqData[i];
+  midEnergy = midEnergy / Math.max(1, midEnd - midStart) / 255;
+
+  const force = bassEnergy * 5;
+
+  for (const p of novaParticles) {
+    p.vx += (Math.random() - 0.5) * force;
+    p.vy += (Math.random() - 0.5) * force;
+
+    // Stronger center gravity during silence
+    if (bassEnergy < 0.12) {
+      p.vx += (w / 2 - p.x) * 0.0005;
+      p.vy += (h / 2 - p.y) * 0.0005;
+    }
+
+    p.vx *= 0.96;
+    p.vy *= 0.96;
+    p.x += p.vx;
+    p.y += p.vy;
+
+    if (p.x < 0) p.x += w;
+    if (p.x > w) p.x -= w;
+    if (p.y < 0) p.y += h;
+    if (p.y > h) p.y -= h;
+
+    // Much bigger expansion — 2-3x larger than regular particles
+    const size = p.size * (1 + bassEnergy * 7);
+
+    const colorIdx = Math.min(p.bin, 63);
+    ctx.fillStyle = theme.color(colorIdx, 64, t);
+
+    // Outer glow halo
+    ctx.globalAlpha = 0.06 + midEnergy * 0.08;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, size * 2.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Mid glow
+    ctx.globalAlpha = 0.15 + midEnergy * 0.2;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, size * 1.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Core
+    ctx.globalAlpha = 0.5 + midEnergy * 0.45;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.globalAlpha = 1.0;
+}
 // ============================================================
 export function startViz() {
   if (vizAnimFrame) return;
