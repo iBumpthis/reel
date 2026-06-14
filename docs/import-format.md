@@ -14,9 +14,9 @@ markers on individual media items.
 Standard CSV with a header row. Fields are matched by header name, not position.
 
 ```csv
-filename,title,artist,year,description,tags
-"Virtual Riot - Throwback Mix.mp4",Throwback Mix,Virtual Riot,2024,Live set from EDC,"electronic, dubstep, live"
-"podcast-episode-42.mp3",Episode 42 - Guest Interview,The Podcast,2025,,podcast
+filename,title,artist,year,album,track_number,description,tags
+"Virtual Riot - Throwback Mix.mp4",Throwback Mix,Virtual Riot,2024,,,Live set from EDC,"electronic, dubstep, live"
+"podcast-episode-42.mp3",Episode 42 - Guest Interview,The Podcast,2025,,,podcast
 ```
 
 ### Matching
@@ -40,6 +40,8 @@ create new media records.
 | `title` | string | Display title. Empty/missing preserves existing value. |
 | `artist` | string | Artist name. Empty/missing preserves existing value. |
 | `year` | integer | Release year. Must be numeric. Empty/missing preserves existing value. |
+| `album` | string | Album name. Empty/missing preserves existing value. |
+| `track_number` | integer | Track number within album. Must be numeric. Empty/missing preserves existing value. |
 | `description` | string | Free-text description. Empty/missing preserves existing value. |
 | `tags` | string | Comma-separated tag names. Replaces all tags for the matched item. Empty/missing leaves existing tags unchanged. |
 

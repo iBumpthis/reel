@@ -26,6 +26,8 @@ export default async function importExportRoutes(fastify) {
       SET title = COALESCE(@title, title),
           artist = COALESCE(@artist, artist),
           year = COALESCE(@year, year),
+          album = COALESCE(@album, album),
+          track_number = COALESCE(@track_number, track_number),
           description = COALESCE(@description, description),
           updated_at = datetime('now')
       WHERE id = @id
@@ -61,6 +63,8 @@ export default async function importExportRoutes(fastify) {
             title: rec.title || null,
             artist: rec.artist || null,
             year: rec.year ? parseInt(rec.year, 10) : null,
+            album: rec.album || null,
+            track_number: rec.track_number ? parseInt(rec.track_number, 10) : null,
             description: rec.description || null,
           });
 
@@ -103,7 +107,7 @@ export default async function importExportRoutes(fastify) {
     let sql = `
       SELECT m.id, m.filename, m.rel_path, m.ext, m.media_type,
              m.size_bytes, m.mtime_ms, m.title, m.artist, m.year,
-             m.description, l.name AS library_name,
+             m.album, m.track_number, m.description, l.name AS library_name,
              m.created_at, m.updated_at
       FROM media m
       JOIN libraries l ON l.id = m.library_id

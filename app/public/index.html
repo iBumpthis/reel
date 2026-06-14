@@ -59,6 +59,7 @@
             <option value="mtime">Date modified</option>
             <option value="title">Title</option>
             <option value="artist">Artist</option>
+            <option value="album">Album</option>
             <option value="year">Year</option>
             <option value="size">Size</option>
             <option value="created">Date added</option>
@@ -91,11 +92,12 @@
       </div>
       <p class="text-sm text-muted" style="margin-bottom: 12px;">
         Paste CSV with columns: <code>filename</code>, <code>title</code>,
-        <code>artist</code>, <code>year</code>, <code>description</code>,
+        <code>artist</code>, <code>year</code>, <code>album</code>,
+        <code>track_number</code>, <code>description</code>,
         <code>tags</code> (comma-separated). Matches on filename.
       </p>
       <textarea id="importText" class="mono"
-        placeholder="filename,title,artist,year,description,tags&#10;my-set.mp4,Live Set,DJ Name,2024,Great show,electronic,live"></textarea>
+        placeholder="filename,title,artist,year,album,track_number,description,tags&#10;my-set.mp4,Live Set,DJ Name,2024,,,Great show,electronic,live"></textarea>
       <div id="importResult" class="import-preview hidden"></div>
       <div class="overlay-footer">
         <span id="importStatus" class="edit-status"></span>
