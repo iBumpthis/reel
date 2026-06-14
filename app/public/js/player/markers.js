@@ -45,8 +45,9 @@ function renderMarkers() {
 
     // Click row → seek to marker
     row.addEventListener('click', (e) => {
-      // Don't seek if clicking edit buttons
+      // Don't seek if clicking edit buttons or inline edit inputs
       if (e.target.closest('.marker-edit-actions')) return;
+      if (e.target.tagName === 'INPUT') return;
       els.player.currentTime = mk.startSeconds;
       els.player.play();
     });

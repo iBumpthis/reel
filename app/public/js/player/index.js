@@ -162,13 +162,28 @@ function initExportMarkers() {
 
     try {
       const text = await api.exportMarkers(state.mediaId);
-      // Copy to clipboard
-      await navigator.clipboard.writeText(text);
+      await copyToClipboard(text);
       toast(`${state.markers.length} marker${state.markers.length !== 1 ? 's' : ''} copied to clipboard`, 'success');
     } catch (err) {
       toast(`Export failed: ${err.message}`, 'error');
     }
   });
+}
+
+/** Copy text to clipboard with fallback for non-secure (HTTP) contexts. */
+async function copyToClipboard(text) {
+  if (navigator.clipboard?.writeText) {
+    return navigator.clipboard.writeText(text);
+  }
+  // Fallback: temporary textarea + execCommand
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  document.execCommand('copy');
+  ta.remove();
 }
 
 // ============================================================
