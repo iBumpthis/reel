@@ -157,7 +157,7 @@ Full backend and frontend built across four development sessions:
   added to the app header on both library and player pages. Inline SVG uses
   `currentColor` — renders in accent amber, transitions to accent-hover on
   hover. Standalone logo file at `app/public/img/logo.svg`.
-- **Three new visualizer modes:**
+- **Four new visualizer modes:**
   - **Radial:** Frequency bars arranged in a 360° circle with mirrored inner
     ring. Uses 80 bins with rounded line caps.
   - **Spectrogram:** Scrolling time × frequency heatmap. Each theme provides
@@ -166,6 +166,9 @@ Full backend and frontend built across four development sessions:
   - **Particles:** 180 audio-reactive particles. Bass energy drives velocity
     force, mid-range drives opacity. Particles drift toward center during
     silence. Lazy-initialized with canvas dimension tracking.
+  - **Nova:** 100 large particles with three-layer glow (core, mid, outer
+    halo). Stronger center gravity and expansion multiplier than Particles.
+    Slower trail decay for longer streaks.
 - **Four new color themes:** Neon (cyan↔magenta), Fire (red→orange→yellow),
   Matrix (green monochrome), Ocean (deep blue→teal). All seven themes include
   `amplitudeColor` for spectrogram compatibility.
@@ -177,17 +180,44 @@ Full backend and frontend built across four development sessions:
   viz-style-selector containers to handle the expanded button set on narrower
   viewports.
 
+### v1.6.0 — Visualizer UX + Matrix Rain
+
+- **Always-visible viz options:** Visualizer mode and theme selectors are now
+  visible in the mode toolbar regardless of active playback mode. Pre-select
+  a mode or theme before switching to visualizer without needing to toggle
+  visualizer mode first.
+- **Fullscreen viz controls:** Hover-reveal panel at the top of the fullscreen
+  view provides access to all viz mode and theme selectors without leaving
+  fullscreen. Uses the same idle timer as the transport controls (3s).
+- **Keyboard shortcuts for viz cycling:** `V` cycles through visualizer modes,
+  `T` cycles through themes. Shift+V and Shift+T cycle in reverse. Pressing
+  `V` while not in visualizer mode switches to visualizer automatically.
+- **Visualizer randomizer:** Clicking the visualizer mode button while already
+  in visualizer mode now randomizes the mode and theme (always picks a
+  different combination than the current one).
+- **Matrix Rain visualizer mode:** Falling characters in columns mapped to
+  frequency bins. Amplitude at each bin controls character brightness via a
+  cubic falloff curve — low-energy bins produce invisible characters, creating
+  organic density gaps. Characters mutate randomly for the classic flicker
+  effect. Pairs naturally with the Matrix green theme. Performance-conscious:
+  cubic falloff skips ~60-70% of columns per frame, keeping draw calls well
+  within budget for headless servers.
+- **Documentation fixes:** v1.5.0 release notes and README corrected to list
+  all seven visualizer modes (Nova was omitted from both). Keyboard shortcuts
+  list updated.
+
 ---
 
 ## Planned
 
-### v1.6 — Feature Evaluation
+### v1.7 — Feature Evaluation
 
 Review deferred features from the original project plan and evaluate for
 inclusion based on real usage patterns:
 
+- SPA-style media switching (in-page swap vs URL navigation — preserves
+  AudioContext and visualizer state between tracks).
 - Waveform seekbar (requires ffmpeg in container).
 - Thumbnail generation (requires ffmpeg, increases Docker image size).
 - Playback history / resume position (data model depends on user scope).
 - Playlists (schema addition, auto-advance, queue management).
-- SPA-style media switching (in-page swap vs URL navigation).

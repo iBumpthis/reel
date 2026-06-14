@@ -9,6 +9,7 @@ let isSeeking = false;
 let fsIdleTimer = null;
 
 const elControls = document.getElementById('playerControls');
+const elFsVizBar = document.getElementById('fsVizBar');
 const elPlay = document.getElementById('ccPlay');
 const elPlayIcon = document.getElementById('ccPlayIcon');
 const elPauseIcon = document.getElementById('ccPauseIcon');
@@ -100,35 +101,41 @@ function onFullscreenChange() {
   if (!isFs) {
     clearTimeout(fsIdleTimer);
     elControls.classList.remove('cc-visible');
+    if (elFsVizBar) elFsVizBar.classList.remove('cc-visible');
   }
 }
 
 // ============================================================
 // Fullscreen idle timer — show controls on mouse movement
 // ============================================================
-function onFrameMouseMove() {
-  if (!document.fullscreenElement) return;
+function showFsControls() {
   elControls.classList.add('cc-visible');
+  if (elFsVizBar) elFsVizBar.classList.add('cc-visible');
   clearTimeout(fsIdleTimer);
   fsIdleTimer = setTimeout(() => {
     elControls.classList.remove('cc-visible');
+    if (elFsVizBar) elFsVizBar.classList.remove('cc-visible');
   }, 3000);
+}
+
+function onFrameMouseMove() {
+  if (!document.fullscreenElement) return;
+  showFsControls();
 }
 
 // ============================================================
 // Frame click → play/pause (guard against control bar clicks)
 // ============================================================
 function onFrameClick(e) {
-  if (!elControls.contains(e.target)) {
-    els.player.paused ? els.player.play() : els.player.pause();
-  }
+  // Don't toggle play/pause when clicking controls or fullscreen viz bar
+  if (elControls.contains(e.target)) return;
+  if (elFsVizBar && elFsVizBar.contains(e.target)) return;
+
+  els.player.paused ? els.player.play() : els.player.pause();
+
   // Reset fullscreen idle timer on any click
   if (document.fullscreenElement) {
-    elControls.classList.add('cc-visible');
-    clearTimeout(fsIdleTimer);
-    fsIdleTimer = setTimeout(() => {
-      elControls.classList.remove('cc-visible');
-    }, 3000);
+    showFsControls();
   }
 }
 

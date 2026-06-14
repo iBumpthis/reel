@@ -6,7 +6,7 @@ import * as api from '../shared/api.js';
 import { toast } from '../shared/utils.js';
 import { initControls, cleanupControls } from './controls.js';
 import { cleanupVisualizer } from './visualizer.js';
-import { initModes } from './modes.js';
+import { initModes, setMode, cycleVizStyle, cycleTheme } from './modes.js';
 import { initMarkers, cleanupMarkers } from './markers.js';
 import { initBrowse } from './browse.js';
 
@@ -282,6 +282,20 @@ document.addEventListener('keydown', (e) => {
       } else {
         els.playbackFrame.requestFullscreen().catch(() => {});
       }
+      break;
+    case 'v':
+    case 'V':
+      // If not in visualizer mode, enter it. If already there, cycle style.
+      if (state.currentMode !== 'visualizer') {
+        setMode('visualizer');
+      } else {
+        cycleVizStyle(e.shiftKey ? -1 : 1);
+      }
+      break;
+    case 't':
+    case 'T':
+      // Cycle color theme
+      cycleTheme(e.shiftKey ? -1 : 1);
       break;
     case 'Escape':
       // Close any open overlay

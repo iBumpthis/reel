@@ -1,8 +1,9 @@
 /**
  * Reel — Playback mode switching.
- * Video / audio / visualizer modes, theme + style selector visibility.
+ * Video / audio / visualizer modes, viz style + theme selection,
+ * fullscreen viz controls, keyboard cycling, randomizer.
  */
-import { ensureAudioContext, resumeAudioContext, startViz, stopViz, initVisualizer } from './visualizer.js';
+import { ensureAudioContext, resumeAudioContext, startViz, stopViz, initVisualizer, VIZ_STYLES, THEME_NAMES } from './visualizer.js';
 
 let state, els;
 
@@ -10,11 +11,15 @@ const AUDIO_ONLY_EXTS = new Set([
   'mp3', 'wav', 'flac', 'm4a', 'ogg', 'aac', 'wma', 'opus',
 ]);
 
-const elVizOptions = document.getElementById('vizOptions');
 const elModeNotice = document.getElementById('modeNotice');
 const modeBtns = document.querySelectorAll('.mode-btn');
+// These selectors capture both the main toolbar AND fullscreen viz bar buttons
+// because they share the same class names.
 const vizStyleBtns = document.querySelectorAll('.viz-style-btn');
 const themeBtns = document.querySelectorAll('.theme-btn');
+
+// Fullscreen viz bar element
+const elFsVizBar = document.getElementById('fsVizBar');
 
 // Markers panel height sync — match to playback frame height
 const elMarkersScroll = document.getElementById('markersScroll');
@@ -37,6 +42,44 @@ function syncMarkersHeight() {
 }
 
 // ============================================================
+// Viz style + theme setters (sync all buttons)
+// ============================================================
+function setVizStyle(style) {
+  state.vizStyle = style;
+  vizStyleBtns.forEach(b => b.classList.toggle('active', b.dataset.style === style));
+}
+
+function setTheme(theme) {
+  state.currentTheme = theme;
+  themeBtns.forEach(b => b.classList.toggle('active', b.dataset.theme === theme));
+}
+
+// ============================================================
+// Cycling (for keyboard shortcuts)
+// ============================================================
+export function cycleVizStyle(direction = 1) {
+  const idx = VIZ_STYLES.indexOf(state.vizStyle);
+  const next = (idx + direction + VIZ_STYLES.length) % VIZ_STYLES.length;
+  setVizStyle(VIZ_STYLES[next]);
+}
+
+export function cycleTheme(direction = 1) {
+  const idx = THEME_NAMES.indexOf(state.currentTheme);
+  const next = (idx + direction + THEME_NAMES.length) % THEME_NAMES.length;
+  setTheme(THEME_NAMES[next]);
+}
+
+// ============================================================
+// Randomizer — random style + theme (excluding current)
+// ============================================================
+function randomize() {
+  const otherStyles = VIZ_STYLES.filter(s => s !== state.vizStyle);
+  const otherThemes = THEME_NAMES.filter(t => t !== state.currentTheme);
+  setVizStyle(otherStyles[Math.floor(Math.random() * otherStyles.length)]);
+  setTheme(otherThemes[Math.floor(Math.random() * otherThemes.length)]);
+}
+
+// ============================================================
 // Mode switching
 // ============================================================
 export function setMode(mode) {
@@ -47,7 +90,6 @@ export function setMode(mode) {
     btn.classList.toggle('active', btn.dataset.mode === mode);
   });
 
-  elVizOptions.classList.toggle('hidden', mode !== 'visualizer');
   elModeNotice.classList.add('hidden');
   elModeNotice.textContent = '';
 
@@ -97,25 +139,29 @@ export function initModes(_state, _els, defaultMode) {
 
   initVisualizer(state, els);
 
-  // Mode buttons
+  // Set initial active states from JS (covers both toolbar + FS buttons)
+  vizStyleBtns.forEach(b => b.classList.toggle('active', b.dataset.style === state.vizStyle));
+  themeBtns.forEach(b => b.classList.toggle('active', b.dataset.theme === state.currentTheme));
+
+  // Mode buttons — visualizer button doubles as randomizer when already active
   modeBtns.forEach(btn => {
-    btn.addEventListener('click', () => setMode(btn.dataset.mode));
+    btn.addEventListener('click', () => {
+      if (btn.dataset.mode === 'visualizer' && state.currentMode === 'visualizer') {
+        randomize();
+      } else {
+        setMode(btn.dataset.mode);
+      }
+    });
   });
 
-  // Viz style buttons
+  // Viz style buttons (both main toolbar and fullscreen bar)
   vizStyleBtns.forEach(btn => {
-    btn.addEventListener('click', () => {
-      state.vizStyle = btn.dataset.style;
-      vizStyleBtns.forEach(b => b.classList.toggle('active', b.dataset.style === state.vizStyle));
-    });
+    btn.addEventListener('click', () => setVizStyle(btn.dataset.style));
   });
 
-  // Theme buttons
+  // Theme buttons (both main toolbar and fullscreen bar)
   themeBtns.forEach(btn => {
-    btn.addEventListener('click', () => {
-      state.currentTheme = btn.dataset.theme;
-      themeBtns.forEach(b => b.classList.toggle('active', b.dataset.theme === state.currentTheme));
-    });
+    btn.addEventListener('click', () => setTheme(btn.dataset.theme));
   });
 
   // Markers panel collapse toggle

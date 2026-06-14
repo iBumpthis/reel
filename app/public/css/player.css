@@ -148,6 +148,41 @@
   opacity: 1;
 }
 
+/* --- Fullscreen viz bar (top, hover-reveal) --- */
+.fs-viz-bar {
+  display: none;
+}
+.playback-frame:fullscreen .fs-viz-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  padding: 8px 16px;
+  background: rgba(15, 20, 25, 0.85);
+  opacity: 0;
+  transition: opacity 0.25s ease;
+  pointer-events: auto;
+  flex-wrap: wrap;
+}
+.playback-frame:fullscreen .fs-viz-bar.cc-visible {
+  opacity: 1;
+}
+.fs-viz-styles {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.fs-viz-themes {
+  display: flex;
+  gap: 4px;
+  padding-left: 8px;
+  border-left: 1px solid rgba(255, 255, 255, 0.12);
+}
+
 /* ============================================================
    Control bar elements
    ============================================================ */
@@ -443,7 +478,6 @@
   border-left: 1px solid var(--border-subtle);
   flex-wrap: wrap;
 }
-.viz-options.hidden { display: none; }
 
 .viz-style-selector {
   display: flex;

@@ -187,8 +187,8 @@ Browse, search, filter, and edit your media collection. Features include:
 Click any media item to open the player. Features include:
 
 - Video, audio, and visualizer playback modes
-- Five visualizer modes: frequency bars, waveform lines, radial, spectrogram,
-  and particle field
+- Seven visualizer modes: frequency bars, waveform lines, radial, spectrogram,
+  particle field, nova, and matrix rain
 - Seven color themes: muted, colorful, RGB, neon, fire, matrix, ocean
 - Custom transport controls (play/pause, seek, volume, speed, fullscreen)
 - Marker sidebar synced to playback position
@@ -198,7 +198,7 @@ Click any media item to open the player. Features include:
 - Inline marker editing (label and timestamp) and deletion
 - Marker text import (paste a tracklist)
 - Marker export to clipboard
-- Keyboard shortcuts: Space (play/pause), ←/→ (±5s), ↑/↓ (volume), M (mute), F (fullscreen)
+- Keyboard shortcuts: Space (play/pause), ←/→ (±5s), ↑/↓ (volume), M (mute), F (fullscreen), V (cycle viz mode), T (cycle theme)
 
 ## Security Model
 
