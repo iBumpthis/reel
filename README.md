@@ -221,8 +221,7 @@ volume is the only writable persistent state.
 
 The Docker setup uses a two-stage build: the first stage compiles
 `better-sqlite3`'s native module (requires python3/make/g++), and the second
-stage copies the built artifacts into a clean `node:24-slim` image. The
-container runs as the non-root `node` user (uid 1000) for security hardening.
+stage copies the built artifacts into a clean `node:24-slim` image.
 
 ```yaml
 # deploy/docker-compose.example.yml
@@ -268,18 +267,6 @@ If you prefer not to set the execute bit, you can also run `bash deploy.sh`
 directly.
 
 `deploy.sh` pulls the latest code, rebuilds the container, and restarts.
-
-**Upgrading to v1.4.0 (non-root container):** The container now runs as the
-`node` user instead of root. If you have an existing named volume for the
-database, fix its ownership before deploying:
-
-```bash
-docker run --rm -v deploy_reel-db:/data/db node:24-slim chown -R node:node /data/db
-```
-
-Replace `deploy_reel-db` with your actual volume name (check with
-`docker volume ls | grep reel`). New deployments need no action — the volume
-inherits the correct ownership from the image on first creation.
 
 ### Bare-Metal / systemd (Alternate)
 

@@ -110,10 +110,6 @@ Full backend and frontend built across four development sessions:
 - **CSV formula injection escaping:** CSV exports now prefix cells starting
   with `=`, `+`, `-`, `@` with a leading apostrophe to prevent spreadsheet
   formula injection. Applies to both metadata and markers CSV exports.
-- **Dockerfile non-root user:** Container now runs as `node` (uid 1000)
-  instead of root. DB directory ownership set during image build. Existing
-  deployments with named volumes need a one-time ownership fix (see deploy
-  notes).
 - **Scan tag-read optimization:** The scanner now skips embedded tag reading
   (music-metadata `parseFile()`) for files that already exist in the database.
   The upsert's ON CONFLICT clause only updates size/mtime/scan tracking — it
@@ -124,8 +120,26 @@ Full backend and frontend built across four development sessions:
 - **Version bump:** package.json and package-lock.json updated from 1.3.0 to
   1.4.0 (skipping the intermediate 1.3.1 that was merged without a bump).
 
+### v1.4.1 — Dockerfile Revert
+
+- **Reverted `USER node` Dockerfile change:** The v1.4.0 build included a
+  `USER node` directive that broke streaming on CIFS/SMB NAS mounts. The
+  displayed 777 permissions on Synology CIFS mounts are cosmetic — actual
+  access is restricted to the mount owner uid (1027), so the `node` user
+  (uid 1000) gets EACCES on `stat()`, which the stream handler returns as
+  404. Dockerfile reverted to match v1.3.x (running as root). See the
+  "Evaluated and deferred" note under v1.4.0 for full rationale.
+
 **Evaluated and deferred:**
 
+- **Dockerfile non-root user:** Evaluated running the container as `USER node`
+  (uid 1000) instead of root. Incompatible with CIFS/SMB NAS mounts — the
+  displayed 777 permissions are a CIFS artifact; actual access is restricted
+  to the mount owner uid (1027 on the Synology NAS). The stream endpoint
+  returns 404 (EACCES caught as file-not-found) for all media files. Since
+  Reel's security model is explicitly trusted-LAN with no internet exposure,
+  root-in-container with read-only media mounts is an accepted tradeoff.
+  Revisit if deployment model changes.
 - **FTS5 trigger-based sync:** Evaluated replacing the full FTS5 rebuild on
   every metadata PATCH with incremental triggers. The scanner's ON CONFLICT
   clause includes `filename` in its SET list, which would cause the update
