@@ -2,7 +2,7 @@
  * Reel — Visualizer.
  * Web Audio API analyser with multiple render modes and color themes.
  *
- * Modes:  bars, lines, circular, spectrogram, particles, nova, matrix
+ * Modes:  bars, lines, circular, spectrogram, particles, nova, matrix, terminal
  * Themes: muted, colorful, rgb, neon, fire, matrix, ocean
  *
  * Copyright (c) 2026 iBumpthis
@@ -18,7 +18,7 @@ let freqData = null;
 let waveData = null;
 
 // Ordered lists for keyboard cycling
-export const VIZ_STYLES = ['bars', 'lines', 'circular', 'spectrogram', 'particles', 'nova', 'matrix'];
+export const VIZ_STYLES = ['bars', 'lines', 'circular', 'spectrogram', 'particles', 'nova', 'matrix', 'terminal'];
 export const THEME_NAMES = ['muted', 'colorful', 'rgb', 'neon', 'fire', 'matrix', 'ocean'];
 
 // ============================================================
@@ -254,6 +254,7 @@ function draw() {
     case 'particles':   drawParticles(ctx, w, h, theme, t); break;
     case 'nova':        drawNova(ctx, w, h, theme, t); break;
     case 'matrix':      drawMatrix(ctx, w, h, theme, t); break;
+    case 'terminal':    drawTerminal(ctx, w, h, theme, t); break;
     default:            drawBars(ctx, w, h, theme, t);
   }
 }
@@ -709,6 +710,332 @@ function drawMatrix(ctx, w, h, theme, t) {
   }
 
   ctx.globalAlpha = 1.0;
+}
+
+// ============================================================
+// Mode: Terminal (scrolling bash-style frequency display)
+//
+// A bash terminal aesthetic. Lines scroll bottom-to-top. Each
+// line is a prompt + 16 frequency bin labels whose brightness
+// maps to amplitude. An easter egg system injects shell commands,
+// fake errors, and interactive output at random intervals.
+//
+// Performance: ~37 visible lines × (1 prompt + 16 labels) = ~629
+// fillText calls/frame. Comparable to Matrix Rain. Easter egg
+// lines are cheaper (single fillText for output strings).
+//
+// OLED protection: scrolling cycles every pixel position. Easter
+// eggs break the prompt pattern at the left edge. Some eggs use
+// alternate prompts (root@reel:#) to shift left-edge characters.
+// ============================================================
+const TERM_PROMPT = 'visualizer@reel:~$ ';
+const TERM_ROOT_PROMPT = 'root@reel:~# ';
+const TERM_FREQ_LABELS = ['20', '32', '50', '80', '125', '200', '315', '500', '800', '1.2k', '2k', '3.2k', '5k', '8k', '12k', '16k'];
+// Target frequencies in Hz for bin mapping
+const TERM_FREQ_HZ = [20, 32, 50, 80, 125, 200, 315, 500, 800, 1200, 2000, 3200, 5000, 8000, 12000, 16000];
+const TERM_LINE_INTERVAL = 125; // ms base between lines
+const TERM_MAX_LINES = 200;
+const TERM_SINGLE_EGG_CHANCE = 1 / 150;
+const TERM_MULTI_EGG_CHANCE = 1 / 400;
+const TERM_EGG_COOLDOWN = 12; // minimum lines between eggs
+
+let termLines = [];
+let termLastLineTime = 0;
+let termCharH = 0;
+let termLastW = 0;
+let termLastH = 0;
+let termEggCooldown = 0;
+let termEggQueue = [];
+let termBinIndices = null; // cached bin index map
+let termLastSampleRate = 0;
+
+// ---- Frequency bin mapping ----
+function ensureTermBins() {
+  const sr = audioCtx ? audioCtx.sampleRate : 44100;
+  if (termBinIndices && termLastSampleRate === sr) return;
+  termLastSampleRate = sr;
+  const fftSize = analyser ? analyser.fftSize : 2048;
+  termBinIndices = TERM_FREQ_HZ.map(freq => {
+    const bin = Math.round(freq * fftSize / sr);
+    return Math.min(bin, (fftSize / 2) - 1);
+  });
+}
+
+function ensureTerminal(w, h) {
+  const charH = Math.max(14, Math.floor(h / 35));
+  if (termLastW === w && termLastH === h && termCharH === charH) return;
+  termLastW = w;
+  termLastH = h;
+  termCharH = charH;
+  // Reset lines on resize — fresh canvas
+  termLines = [];
+  termLastLineTime = 0;
+  termEggCooldown = 0;
+  termEggQueue = [];
+}
+
+// ---- Easter egg definitions ----
+// Each egg: { type: 'single'|'multi', lines: fn(state, els) => array of line objects }
+// Line object: { text, prompt?, isOutput? }
+// prompt defaults to TERM_PROMPT for command lines; omitted for output-only lines.
+
+function makeEggLines(cmd, output, prompt) {
+  const lines = [{ text: cmd, prompt: prompt || TERM_PROMPT }];
+  if (output !== undefined && output !== null) {
+    const outputs = Array.isArray(output) ? output : [output];
+    for (const o of outputs) {
+      lines.push({ text: o, isOutput: true });
+    }
+  }
+  return lines;
+}
+
+function getTermSingleEggs() {
+  return [
+    () => makeEggLines('whoami', 'visualizer@reel'),
+    () => makeEggLines('pwd', '/media/music'),
+    () => makeEggLines('echo $SHELL', '/bin/bash'),
+    () => makeEggLines('echo "Hello, World!"', 'Hello, World!'),
+    () => makeEggLines("alias play='listen --with-feeling'"),
+    () => makeEggLines('sudo rm -rf /silence', '', TERM_ROOT_PROMPT),
+    () => makeEggLines('cat /dev/urandom | head -1', generateGarbage()),
+    () => makeEggLines('ping 127.0.0.1', '64 bytes from 127.0.0.1: time=0.042ms'),
+    () => makeEggLines('man bass', 'No manual entry for bass'),
+    () => makeEggLines('which visualizer', '/usr/local/bin/reel'),
+    () => makeEggLines('true && echo "bass dropped"', 'bass dropped'),
+    () => makeEggLines('echo $((RANDOM % 128))', String(Math.floor(Math.random() * 128))),
+    () => makeEggLines('lls', 'bash: lls: command not found'),
+    () => makeEggLines('sl', 'bash: sl: command not found'),
+    () => makeEggLines('dir', 'bash: dir: command not found'),
+    () => makeEggLines('cls', 'bash: cls: command not found'),
+    () => makeEggLines('cowsay moo', 'bash: cowsay: command not found'),
+    () => makeEggLines('ipconfig /all', '-bash: ipconfig: No such file or directory'),
+    () => makeEggLines('Get-Process -Name "reel"', 'Get-Process: command not found'),
+    // cat /proc/uptime — raw seconds
+    () => {
+      const ct = els.player ? els.player.currentTime : 0;
+      const idle = (ct * 0.03).toFixed(2);
+      return makeEggLines('cat /proc/uptime', `${ct.toFixed(2)} ${idle}`);
+    },
+  ];
+}
+
+function getTermMultiEggs(state, els) {
+  return [
+    // uptime (2 lines)
+    () => {
+      const ct = els.player ? els.player.currentTime : 0;
+      const mins = Math.floor(ct / 60);
+      const secs = Math.floor(ct % 60);
+      const timeStr = `${mins}:${String(secs).padStart(2, '0')}`;
+      // Load averages from bass/mid/high energy
+      analyser.getByteFrequencyData(freqData);
+      const binCount = analyser.frequencyBinCount;
+      const bassEnd = Math.floor(binCount * 0.08);
+      const midEnd = Math.floor(binCount * 0.3);
+      const highEnd = Math.floor(binCount * 0.6);
+      let bass = 0, mid = 0, high = 0;
+      for (let i = 0; i < bassEnd; i++) bass += freqData[i];
+      bass = (bass / Math.max(1, bassEnd) / 255).toFixed(2);
+      for (let i = bassEnd; i < midEnd; i++) mid += freqData[i];
+      mid = (mid / Math.max(1, midEnd - bassEnd) / 255).toFixed(2);
+      for (let i = midEnd; i < highEnd; i++) high += freqData[i];
+      high = (high / Math.max(1, highEnd - midEnd) / 255).toFixed(2);
+      return makeEggLines('uptime', ` up ${timeStr}, 1 user, load average: ${bass} ${mid} ${high}`);
+    },
+    // stat now_playing (4 lines)
+    () => {
+      const m = state.media || {};
+      const fname = [m.artist, m.title || m.filename].filter(Boolean).join(' - ');
+      const ext = m.ext ? `.${m.ext}` : '';
+      const size = m.sizeBytes || 0;
+      const blocks = Math.ceil(size / 512);
+      return makeEggLines('stat now_playing', [
+        `  File: ${fname}${ext}`,
+        `  Size: ${size}    Blocks: ${blocks}    IO Block: 4096`,
+        `  Access: (0644/-rw-r--r--)`,
+      ]);
+    },
+    // ssh visualizer@reel (5 lines)
+    () => makeEggLines('ssh visualizer@reel', [
+      "The authenticity of host 'reel (127.0.1.1)' can't be established.",
+      'Key fingerprint is... wait',
+      "You're already here?",
+      'Host key verification failed.',
+    ]),
+    // Fake segfault (2 lines — no command, just output)
+    () => [
+      { text: 'Segmentation fault (core dumped)', isOutput: true },
+      { text: '', prompt: TERM_PROMPT, isOutput: true },
+    ],
+    // apt reel (2 lines)
+    () => makeEggLines('apt reel', 'ASCII Tape Cassette?'),
+    // aptitude reel — "no easter eggs" (2 lines)
+    () => makeEggLines('aptitude reel', 'There are no Easter Eggs in this program.'),
+    // aptitude -vvvvvvv reel — ASCII tape cassette (~9 lines)
+    () => makeEggLines('aptitude -vvvvvvv reel', [
+      '   ┌──────────────────────────┐',
+      '   │  ╭────╮  R E E L  ╭────╮│',
+      '   │  │ ◎  │           │  ◎ ││',
+      '   │  ╰────╯           ╰────╯│',
+      '   │ ░░░░░░░░░░░░░░░░░░░░░░░ │',
+      '   │  ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔ │',
+      '   └──────────────────────────┘',
+    ]),
+  ];
+}
+
+function generateGarbage() {
+  const chars = '█▓▒░╔╗╚╝║═┌┐└┘│─┬┴├┤┼▲▼◄►◊○●□■♦♣♥♠@#$%^&*~`;:?/|\\';
+  let s = '';
+  const len = 30 + Math.floor(Math.random() * 30);
+  for (let i = 0; i < len; i++) s += chars[Math.floor(Math.random() * chars.length)];
+  return s;
+}
+
+// ---- Terminal draw ----
+function drawTerminal(ctx, w, h, theme, t) {
+  // Full clear — no persistence trail for terminal
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.95)';
+  ctx.fillRect(0, 0, w, h);
+
+  ensureTerminal(w, h);
+  ensureTermBins();
+  analyser.getByteFrequencyData(freqData);
+
+  const now = performance.now();
+  const charH = termCharH;
+  const lineSpacing = Math.floor(charH * 1.3);
+  const maxVisible = Math.ceil(h / lineSpacing) + 2;
+
+  ctx.font = `${charH}px monospace`;
+  ctx.textBaseline = 'top';
+
+  // ---- Add new line(s) on tick ----
+  if (termLastLineTime === 0) termLastLineTime = now;
+
+  while (now - termLastLineTime >= TERM_LINE_INTERVAL) {
+    termLastLineTime += TERM_LINE_INTERVAL;
+
+    // Check egg queue first (multi-line eggs feed one line per tick)
+    if (termEggQueue.length > 0) {
+      termLines.push(termEggQueue.shift());
+      if (termEggCooldown > 0) termEggCooldown--;
+    } else {
+      // Try easter egg
+      let egged = false;
+      if (termEggCooldown <= 0) {
+        if (Math.random() < TERM_MULTI_EGG_CHANCE) {
+          const pool = getTermMultiEggs(state, els);
+          const egg = pool[Math.floor(Math.random() * pool.length)];
+          const lines = egg();
+          // First line goes now, rest queue
+          termLines.push(lines[0]);
+          for (let i = 1; i < lines.length; i++) termEggQueue.push(lines[i]);
+          termEggCooldown = TERM_EGG_COOLDOWN;
+          egged = true;
+        } else if (Math.random() < TERM_SINGLE_EGG_CHANCE) {
+          const pool = getTermSingleEggs();
+          const egg = pool[Math.floor(Math.random() * pool.length)];
+          const lines = egg();
+          termLines.push(lines[0]);
+          for (let i = 1; i < lines.length; i++) termEggQueue.push(lines[i]);
+          termEggCooldown = TERM_EGG_COOLDOWN;
+          egged = true;
+        }
+      } else {
+        termEggCooldown--;
+      }
+
+      if (!egged) {
+        // Normal frequency line — snapshot current amplitudes
+        const amps = new Float32Array(16);
+        for (let b = 0; b < 16; b++) {
+          amps[b] = freqData[termBinIndices[b]] / 255;
+        }
+        termLines.push({ type: 'freq', amps });
+      }
+    }
+
+    // Trim old lines
+    if (termLines.length > TERM_MAX_LINES) {
+      termLines.splice(0, termLines.length - TERM_MAX_LINES);
+    }
+  }
+
+  // ---- Render visible lines bottom-to-top ----
+  const totalLines = termLines.length;
+  const startIdx = Math.max(0, totalLines - maxVisible);
+  const promptColor = theme.color(0, 16, t);
+
+  // Measure prompt width once
+  ctx.font = `${charH}px monospace`;
+  const promptWidth = ctx.measureText(TERM_PROMPT).width;
+  const labelAreaWidth = w - promptWidth - 10; // 10px right margin
+  const labelSlotWidth = labelAreaWidth / 16;
+
+  for (let i = startIdx; i < totalLines; i++) {
+    const line = termLines[i];
+    const row = i - startIdx;
+    // Lines render from bottom: newest at bottom, oldest at top
+    const y = h - (totalLines - i) * lineSpacing;
+
+    if (y < -lineSpacing || y > h + lineSpacing) continue;
+
+    if (line.type === 'freq') {
+      // Prompt prefix — dimmer
+      ctx.fillStyle = promptColor;
+      ctx.globalAlpha = 0.35;
+      ctx.textAlign = 'left';
+      ctx.fillText(TERM_PROMPT, 4, y);
+
+      // Frequency labels — brightness from stored amplitude
+      for (let b = 0; b < 16; b++) {
+        const amp = line.amps[b];
+        // Gentler falloff than Matrix — square instead of cubic
+        const brightness = amp * amp;
+        if (brightness < 0.01) {
+          // Still show label very dimly for the terminal aesthetic
+          ctx.fillStyle = promptColor;
+          ctx.globalAlpha = 0.08;
+        } else {
+          ctx.fillStyle = theme.color(b, 16, t);
+          ctx.globalAlpha = 0.15 + brightness * 0.85;
+        }
+        const lx = promptWidth + 4 + b * labelSlotWidth;
+        ctx.textAlign = 'center';
+        ctx.fillText(TERM_FREQ_LABELS[b], lx + labelSlotWidth / 2, y);
+      }
+    } else {
+      // Easter egg line
+      const prompt = line.prompt || '';
+      const text = line.text || '';
+
+      if (prompt) {
+        // Command line: prompt + command text
+        ctx.fillStyle = promptColor;
+        ctx.globalAlpha = 0.35;
+        ctx.textAlign = 'left';
+        ctx.fillText(prompt, 4, y);
+
+        if (text) {
+          ctx.fillStyle = theme.color(8, 16, t);
+          ctx.globalAlpha = 0.8;
+          const px = ctx.measureText(prompt).width + 4;
+          ctx.fillText(text, px, y);
+        }
+      } else if (line.isOutput) {
+        // Output-only line (no prompt)
+        ctx.fillStyle = theme.color(8, 16, t);
+        ctx.globalAlpha = 0.75;
+        ctx.textAlign = 'left';
+        ctx.fillText(text, 4, y);
+      }
+    }
+  }
+
+  ctx.globalAlpha = 1.0;
+  ctx.textAlign = 'left';
 }
 
 // ============================================================

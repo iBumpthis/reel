@@ -230,15 +230,30 @@ Full backend and frontend built across four development sessions:
 
 ---
 
+### v1.7.0 — Terminal Visualizer
+
+- **Terminal visualizer mode (8th mode):** Bash terminal aesthetic — lines
+  scroll bottom-to-top at ~8 lines/sec. Each line shows a
+  `visualizer@reel:~$` prompt followed by 16 frequency bin labels (20 Hz
+  through 16 kHz) whose brightness maps to audio amplitude at that frequency.
+  Square falloff (gentler than Matrix Rain's cubic) keeps labels readable.
+  Bin mapping is sample-rate-aware via `audioCtx.sampleRate`.
+- **Easter egg system:** Single-line eggs (~1 in 150 lines, ~every 18-20s)
+  and multi-line eggs (~1 in 400 lines, ~every 50s) inject shell commands,
+  fake errors, and interactive output. Pool includes ~19 single-line entries
+  (whoami, wrong-platform typos like `ipconfig /all` and `Get-Process`,
+  command-not-found errors) and ~8 multi-line entries (uptime with playback
+  position and bass/mid/high as load averages, stat with current track
+  metadata, ssh loop, fake segfault, apt/aptitude two-parter with ASCII tape
+  cassette art where v-count = line count). Cooldown prevents back-to-back
+  eggs (12-line minimum gap).
+- **OLED protection:** Scrolling cycles all pixel positions. Easter egg
+  responses break the prompt pattern at the left edge. Some eggs use
+  alternate prompts (`root@reel:~#`) to shift left-edge characters.
+
+---
+
 ## Planned
-
-### v1.7 — Terminal Visualizer
-
-New visualizer mode with a bash terminal aesthetic. Lines scroll bottom-to-top;
-each line is a `visualizer@reel:~$` prompt followed by frequency bin labels
-whose brightness maps to audio amplitude. Easter egg system inserts shell
-commands, fake errors, and interactive output (uptime using playback position,
-stat showing current track metadata) at random intervals.
 
 ### v1.8 — Visualizer Pack
 
