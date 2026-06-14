@@ -101,24 +101,49 @@ Full backend and frontend built across four development sessions:
 - **Deployment hardening (v1.2.1):** `.dockerignore` added to prevent host
   `node_modules` from poisoning Docker builds. Dockerfile `EXPOSE` corrected
   to 32411. Lockfile regenerated with correct version and dependency tree.
+- **Bug fixes (v1.3.1):** Clipboard fallback for HTTP LAN deployments
+  (`execCommand('copy')` when `navigator.clipboard` unavailable). Seek-on-click
+  no longer fires when clicking into marker edit inputs.
+
+### v1.4.0 — Technical Debt + Hardening
+
+- **CSV formula injection escaping:** CSV exports now prefix cells starting
+  with `=`, `+`, `-`, `@` with a leading apostrophe to prevent spreadsheet
+  formula injection. Applies to both metadata and markers CSV exports.
+- **Dockerfile non-root user:** Container now runs as `node` (uid 1000)
+  instead of root. DB directory ownership set during image build. Existing
+  deployments with named volumes need a one-time ownership fix (see deploy
+  notes).
+- **Scan tag-read optimization:** The scanner now skips embedded tag reading
+  (music-metadata `parseFile()`) for files that already exist in the database.
+  The upsert's ON CONFLICT clause only updates size/mtime/scan tracking — it
+  does not overwrite metadata fields — so tag reads for existing files were
+  pure I/O waste. This significantly reduces scan time for subsequent scans
+  on NAS storage. If a file is re-encoded at the same path, delete the DB
+  row and re-scan to pick up new embedded tags.
+- **Version bump:** package.json and package-lock.json updated from 1.3.0 to
+  1.4.0 (skipping the intermediate 1.3.1 that was merged without a bump).
+
+**Evaluated and deferred:**
+
+- **FTS5 trigger-based sync:** Evaluated replacing the full FTS5 rebuild on
+  every metadata PATCH with incremental triggers. The scanner's ON CONFLICT
+  clause includes `filename` in its SET list, which would cause the update
+  trigger to fire on every scan upsert even when filename doesn't change.
+  Fixing this requires either conditional WHEN clauses or removing filename
+  from the scan SET. At ~3K items the full rebuild is under 20ms. Deferred
+  until scale warrants the migration complexity.
+- **Inline-edit double-save race:** Enter fires save, then blur also fires
+  save. Second save is a no-op with identical data. Benign — not worth a
+  guard flag.
 
 ---
 
 ## Planned
 
-### v1.4 — Technical Debt + Branding
-
-Documented tradeoffs from v1.0 and deferred polish:
+### v1.5 — Logo/Branding + Visualizer Upgrades
 
 - Header logo/branding (SVG icon in place of plain "Reel" text).
-- CSV export formula injection escaping (leading `=`).
-- `USER node` in Dockerfile (one-line hardening + volume ownership).
-- FTS5 rebuild-on-every-edit → trigger-based sync (scale blocker).
-- Evaluate: scan tag-read optimization (skip when mtime unchanged).
-- Evaluate: benign inline-edit double-save race (Enter + blur).
-
-### v1.5 — Visualizer Upgrades
-
 - Additional visualizer modes: circular/radial, spectrogram, particle field.
 - Visualizer mode selector (beyond the current bars/lines toggle).
 - Theme additions beyond the current three color palettes.

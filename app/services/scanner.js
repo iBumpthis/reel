@@ -49,6 +49,14 @@ async function* walkDir(dir, counters) {
  * This prevents a transient mount failure from cascading into deletion of
  * all media rows — and with them, all markers and tag links (ON DELETE CASCADE).
  *
+ * Tag-read optimization (v1.4): embedded tag reading via music-metadata is
+ * skipped for files that already exist in the DB. The upsert's ON CONFLICT
+ * clause only updates size/mtime/scan tracking — it does not overwrite
+ * title/artist/year/album/track_number. So tag reads for existing files are
+ * pure I/O waste; the results would be discarded by the upsert. If a file
+ * is re-encoded at the same path, the user should delete the DB row and
+ * re-scan (or edit metadata manually) to pick up new embedded tags.
+ *
  * @param {object} config - app config with libraries and allowedExtensions
  * @param {import('better-sqlite3').Database} db
  * @returns {Promise<{ scanId: number, totalUpserts: number, totalDeletes: number, skippedLibraries: string[], brokenSymlinks: number }>}
@@ -92,6 +100,7 @@ export async function scanLibraries(config, db) {
 
   let totalUpserts = 0;
   let totalDeletes = 0;
+  let tagReadsSkipped = 0;
   const skippedLibraries = [];
   const counters = { brokenSymlinks: 0 };
 
@@ -136,14 +145,20 @@ export async function scanLibraries(config, db) {
         const relPath = relative(lib.path, absPath);
         const parsed = parseFilename(filename);
 
-        // ID3 tag reading for audio files — fall back to parseFilename
+        // Check if this file already exists in the DB.
+        // If it does, skip the expensive music-metadata tag read — the upsert's
+        // ON CONFLICT clause doesn't update metadata fields, so the read result
+        // would be discarded anyway.
+        const existingMedia = getMediaByPath.get(absPath);
+
+        // ID3 tag reading for NEW audio files only — fall back to parseFilename
         let artist = parsed.artist;
         let title = parsed.title;
         let year = parsed.year;
         let album = null;
         let trackNumber = null;
 
-        if (mediaType === 'audio' && TAG_READABLE.has(ext)) {
+        if (mediaType === 'audio' && TAG_READABLE.has(ext) && !existingMedia) {
           try {
             const meta = await parseFile(absPath, { skipCovers: true, duration: false });
             const c = meta.common;
@@ -155,6 +170,8 @@ export async function scanLibraries(config, db) {
           } catch {
             // Tag read failed — use parseFilename values (already set above)
           }
+        } else if (mediaType === 'audio' && TAG_READABLE.has(ext) && existingMedia) {
+          tagReadsSkipped++;
         }
 
         upsertMedia.run({
@@ -174,8 +191,8 @@ export async function scanLibraries(config, db) {
           last_seen_scan: scanId,
         });
 
-        // Get the media ID for tagging
-        const mediaRow = getMediaByPath.get(absPath);
+        // Get the media ID for tagging (re-query since upsert may have inserted)
+        const mediaRow = existingMedia || getMediaByPath.get(absPath);
         if (!mediaRow) continue;
         const mediaId = mediaRow.id;
 
@@ -228,6 +245,10 @@ export async function scanLibraries(config, db) {
 
   if (counters.brokenSymlinks > 0) {
     console.warn(`[reel] Skipped ${counters.brokenSymlinks} broken symlink(s) during scan`);
+  }
+
+  if (tagReadsSkipped > 0) {
+    console.log(`[reel] Skipped ${tagReadsSkipped} tag read(s) for existing files`);
   }
 
   // Rebuild FTS index
