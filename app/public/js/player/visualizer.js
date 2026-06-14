@@ -166,7 +166,7 @@ function ensureParticles(w, h) {
       y: Math.random() * h,
       vx: (Math.random() - 0.5) * 1.5,
       vy: (Math.random() - 0.5) * 1.5,
-      size: Math.random() * 2.5 + 0.8,
+      size: Math.random() * 3.2 + 1.2,
       bin: Math.floor(Math.random() * 64),
     });
   }
@@ -189,10 +189,15 @@ function draw() {
   const ctx = canvas.getContext('2d');
 
   // Sync canvas resolution to display size
+  // Note: getBoundingClientRect() returns floats but canvas.width/height
+  // are integers. Without rounding, the comparison fires every frame,
+  // re-clearing the canvas — fatal for spectrogram which accumulates.
   const rect = canvas.getBoundingClientRect();
-  if (canvas.width !== rect.width || canvas.height !== rect.height) {
-    canvas.width = rect.width;
-    canvas.height = rect.height;
+  const rectW = Math.round(rect.width);
+  const rectH = Math.round(rect.height);
+  if (canvas.width !== rectW || canvas.height !== rectH) {
+    canvas.width = rectW;
+    canvas.height = rectH;
   }
 
   const w = canvas.width;
@@ -248,7 +253,7 @@ function drawBars(ctx, w, h, theme, t) {
 // ============================================================
 function drawLines(ctx, w, h, theme, t) {
   // Persistence decay — partial clear creates trailing effect
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.11)';
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.16)';
   ctx.fillRect(0, 0, w, h);
 
   analyser.getByteTimeDomainData(waveData);
@@ -259,12 +264,10 @@ function drawLines(ctx, w, h, theme, t) {
   // Layered copies with Y offset — center full opacity, outers fade
   const layers = [
     { offset: 0,   alpha: 1.0  },
-    { offset: -18, alpha: 0.55 },
-    { offset:  18, alpha: 0.55 },
-    { offset: -36, alpha: 0.3  },
-    { offset:  36, alpha: 0.3  },
-    { offset: -54, alpha: 0.1  },
-    { offset:  54, alpha: 0.1  },
+    { offset: -22, alpha: 0.45 },
+    { offset:  22, alpha: 0.45 },
+    { offset: -44, alpha: 0.15 },
+    { offset:  44, alpha: 0.15 },
   ];
 
   for (const layer of layers) {
@@ -289,7 +292,7 @@ function drawLines(ctx, w, h, theme, t) {
 }
 
 // ============================================================
-// Mode: Circular (radial frequency bars around a center ring)
+// Mode: Circular (radial frequency bars, mirrored for symmetry)
 // ============================================================
 function drawCircular(ctx, w, h, theme, t) {
   ctx.fillStyle = theme.bg;
@@ -302,39 +305,49 @@ function drawCircular(ctx, w, h, theme, t) {
   const baseRadius = Math.min(w, h) * 0.22;
   const maxBarLen = Math.min(w, h) * 0.28;
 
-  // Use ~80 bins for a clean circle
+  // Mirror: use ~48 bins, draw clockwise + counter-clockwise from top
+  // Bass at 12 o'clock, high freq meets at 6 o'clock
   const rawBins = analyser.frequencyBinCount;
-  const usableBins = Math.min(Math.floor(rawBins * 0.5), 80);
-  const binStep = Math.floor(rawBins * 0.5) / usableBins;
-  const arcWidth = Math.max(1.5, (Math.PI * 2 * baseRadius / usableBins) * 0.65);
+  const halfBins = Math.min(Math.floor(rawBins * 0.4), 48);
+  const binStep = Math.floor(rawBins * 0.4) / halfBins;
+  const totalPositions = halfBins * 2;
+  const arcWidth = Math.max(1.5, (Math.PI * 2 * baseRadius / totalPositions) * 0.65);
 
-  for (let i = 0; i < usableBins; i++) {
+  for (let i = 0; i < halfBins; i++) {
     const binIndex = Math.floor(i * binStep);
     const val = freqData[binIndex] / 255;
-    const angle = (i / usableBins) * Math.PI * 2 - Math.PI / 2;
     const barLen = val * maxBarLen;
 
-    const cos = Math.cos(angle);
-    const sin = Math.sin(angle);
+    // Angle from top: right side goes clockwise, left side mirrors
+    const angleOffset = (i / halfBins) * Math.PI;
+    const angles = [
+      -Math.PI / 2 + angleOffset,  // right half (clockwise from top)
+      -Math.PI / 2 - angleOffset,  // left half (counter-clockwise from top)
+    ];
 
-    ctx.strokeStyle = theme.color(i, usableBins, t);
-    ctx.lineWidth = arcWidth;
-    ctx.lineCap = 'round';
+    for (const angle of angles) {
+      const cos = Math.cos(angle);
+      const sin = Math.sin(angle);
 
-    // Outer bars
-    ctx.beginPath();
-    ctx.moveTo(centerX + cos * baseRadius, centerY + sin * baseRadius);
-    ctx.lineTo(centerX + cos * (baseRadius + barLen), centerY + sin * (baseRadius + barLen));
-    ctx.stroke();
+      ctx.strokeStyle = theme.color(i, halfBins, t);
+      ctx.lineWidth = arcWidth;
+      ctx.lineCap = 'round';
 
-    // Inner mirror (shorter, dimmer)
-    ctx.globalAlpha = 0.35;
-    const innerLen = val * maxBarLen * 0.4;
-    ctx.beginPath();
-    ctx.moveTo(centerX + cos * baseRadius, centerY + sin * baseRadius);
-    ctx.lineTo(centerX + cos * (baseRadius - innerLen), centerY + sin * (baseRadius - innerLen));
-    ctx.stroke();
-    ctx.globalAlpha = 1.0;
+      // Outer bars
+      ctx.beginPath();
+      ctx.moveTo(centerX + cos * baseRadius, centerY + sin * baseRadius);
+      ctx.lineTo(centerX + cos * (baseRadius + barLen), centerY + sin * (baseRadius + barLen));
+      ctx.stroke();
+
+      // Inner mirror (shorter, dimmer)
+      ctx.globalAlpha = 0.35;
+      const innerLen = val * maxBarLen * 0.4;
+      ctx.beginPath();
+      ctx.moveTo(centerX + cos * baseRadius, centerY + sin * baseRadius);
+      ctx.lineTo(centerX + cos * (baseRadius - innerLen), centerY + sin * (baseRadius - innerLen));
+      ctx.stroke();
+      ctx.globalAlpha = 1.0;
+    }
   }
 
   // Center ring outline
@@ -435,7 +448,7 @@ function drawParticles(ctx, w, h, theme, t) {
     if (p.y > h) p.y -= h;
 
     // Size reacts to bass
-    const size = p.size * (1 + bassEnergy * 2.5);
+    const size = p.size * (1 + bassEnergy * 4.5);
 
     // Color from theme using particle's assigned bin
     const colorIdx = Math.min(p.bin, 63);
