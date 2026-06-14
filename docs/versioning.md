@@ -206,14 +206,48 @@ Full backend and frontend built across four development sessions:
   all seven visualizer modes (Nova was omitted from both). Keyboard shortcuts
   list updated.
 
+### v1.6.1 — Bug Fixes + Polish
+
+- **Fullscreen controls staying visible:** CSS specificity bug — the hover
+  rules (0-4-0) beat the fullscreen opacity rules (0-3-0), keeping controls
+  permanently visible since `:hover` is always true in fullscreen. Fixed by
+  adding `:not(:fullscreen)` to the hover selectors so fullscreen visibility
+  is exclusively controlled by the idle timer.
+- **Viz style buttons inert outside visualizer mode:** Clicking a viz style
+  button (Bars, Lines, etc.) while not in visualizer mode now automatically
+  switches to visualizer mode. Previously the button only updated the
+  internal state without switching modes.
+- **Matrix Rain head character:** Two improvements — (1) trail alpha starts
+  at 0.7 after the head (30% drop from head to second character), and
+  (2) white overlay on peaks. Head characters blend toward white when
+  amplitude is high (cubic falloff gates it so only genuine peaks produce
+  white-hot heads, matching the movie aesthetic).
+- **Mode toolbar layout:** Restructured from a single flex row to a two-row
+  centered column. Row 1: mode buttons + viz style buttons (inline with
+  border-left divider). Row 2: theme dots. The `viz-options` wrapper div
+  was removed; `viz-style-selector` and `theme-selector` are now direct
+  children of the toolbar.
+
 ---
 
 ## Planned
 
-### v1.7 — Feature Evaluation
+### v1.7 — Terminal Visualizer
 
-Review deferred features from the original project plan and evaluate for
-inclusion based on real usage patterns:
+New visualizer mode with a bash terminal aesthetic. Lines scroll bottom-to-top;
+each line is a `visualizer@reel:~$` prompt followed by frequency bin labels
+whose brightness maps to audio amplitude. Easter egg system inserts shell
+commands, fake errors, and interactive output (uptime using playback position,
+stat showing current track metadata) at random intervals.
+
+### v1.8 — Visualizer Pack
+
+Additional visualizer modes (traditional render variations). Scope TBD.
+
+### Future — Feature Evaluation
+
+Deferred features from the original project plan, evaluated for inclusion
+based on real usage patterns:
 
 - SPA-style media switching (in-page swap vs URL navigation — preserves
   AudioContext and visualizer state between tracks).
