@@ -155,8 +155,14 @@ export function initModes(_state, _els, defaultMode) {
   });
 
   // Viz style buttons (both main toolbar and fullscreen bar)
+  // Clicking a style button while not in visualizer mode enters it automatically.
   vizStyleBtns.forEach(btn => {
-    btn.addEventListener('click', () => setVizStyle(btn.dataset.style));
+    btn.addEventListener('click', () => {
+      setVizStyle(btn.dataset.style);
+      if (state.currentMode !== 'visualizer') {
+        setMode('visualizer');
+      }
+    });
   });
 
   // Theme buttons (both main toolbar and fullscreen bar)
