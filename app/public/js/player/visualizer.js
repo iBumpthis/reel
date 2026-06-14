@@ -2,7 +2,7 @@
  * Reel — Visualizer.
  * Web Audio API analyser with multiple render modes and color themes.
  *
- * Modes:  bars, lines, circular, spectrogram, particles
+ * Modes:  bars, lines, circular, spectrogram, particles, nova, matrix
  * Themes: muted, colorful, rgb, neon, fire, matrix, ocean
  *
  * Copyright (c) 2026 iBumpthis
@@ -16,6 +16,10 @@ let sourceNode = null;
 let vizAnimFrame = null;
 let freqData = null;
 let waveData = null;
+
+// Ordered lists for keyboard cycling
+export const VIZ_STYLES = ['bars', 'lines', 'circular', 'spectrogram', 'particles', 'nova', 'matrix'];
+export const THEME_NAMES = ['muted', 'colorful', 'rgb', 'neon', 'fire', 'matrix', 'ocean'];
 
 // ============================================================
 // Themes — each provides bg, color(i, count, t), and
@@ -180,6 +184,43 @@ let spectroLastH = 0;
 const SPECTRO_SCROLL_PX = 2;
 
 // ============================================================
+// Matrix Rain state
+// ============================================================
+const MATRIX_CHARS = 'アイウエオカキクケコサシスセソタチツテトナニヌネノ0123456789ABCDEF';
+const MATRIX_COL_COUNT = 64;
+const MATRIX_TRAIL_LEN = 22;
+let matrixColumns = [];
+let matrixLastW = 0;
+let matrixLastH = 0;
+let matrixCharH = 0;
+
+function ensureMatrix(w, h) {
+  const charH = Math.max(14, Math.floor(h / 35));
+
+  if (matrixColumns.length === MATRIX_COL_COUNT && matrixLastW === w && matrixLastH === h) return;
+  matrixLastW = w;
+  matrixLastH = h;
+  matrixCharH = charH;
+
+  const colWidth = w / MATRIX_COL_COUNT;
+  const maxRows = Math.ceil(h / charH) + MATRIX_TRAIL_LEN + 5;
+
+  matrixColumns = [];
+  for (let i = 0; i < MATRIX_COL_COUNT; i++) {
+    const chars = [];
+    for (let r = 0; r < maxRows; r++) {
+      chars.push(MATRIX_CHARS[Math.floor(Math.random() * MATRIX_CHARS.length)]);
+    }
+    matrixColumns.push({
+      chars,
+      headY: Math.random() * (h + charH * MATRIX_TRAIL_LEN),
+      speed: (0.6 + Math.random() * 1.4) * charH / 18,
+      x: i * colWidth + colWidth / 2,
+    });
+  }
+}
+
+// ============================================================
 // Draw loop
 // ============================================================
 function draw() {
@@ -206,13 +247,14 @@ function draw() {
   const t = performance.now() / 1000;
 
   switch (state.vizStyle) {
-    case 'bars':       drawBars(ctx, w, h, theme, t); break;
-    case 'lines':      drawLines(ctx, w, h, theme, t); break;
-    case 'circular':   drawCircular(ctx, w, h, theme, t); break;
+    case 'bars':        drawBars(ctx, w, h, theme, t); break;
+    case 'lines':       drawLines(ctx, w, h, theme, t); break;
+    case 'circular':    drawCircular(ctx, w, h, theme, t); break;
     case 'spectrogram': drawSpectrogram(ctx, w, h, theme, t); break;
-    case 'particles':  drawParticles(ctx, w, h, theme, t); break;
-    case 'nova':       drawNova(ctx, w, h, theme, t); break;
-    default:           drawBars(ctx, w, h, theme, t);
+    case 'particles':   drawParticles(ctx, w, h, theme, t); break;
+    case 'nova':        drawNova(ctx, w, h, theme, t); break;
+    case 'matrix':      drawMatrix(ctx, w, h, theme, t); break;
+    default:            drawBars(ctx, w, h, theme, t);
   }
 }
 
@@ -567,6 +609,94 @@ function drawNova(ctx, w, h, theme, t) {
 
   ctx.globalAlpha = 1.0;
 }
+
+// ============================================================
+// Mode: Matrix Rain (falling characters, frequency-driven brightness)
+//
+// Each column maps to a frequency bin (same layout as bars). Characters
+// fall continuously; their brightness comes from the amplitude at that
+// bin with an aggressive cubic falloff so quiet bins produce invisible
+// columns. Music's natural frequency distribution creates organic gaps.
+//
+// Performance: cubic falloff skips ~60-70% of columns per frame. Visible
+// columns draw ~8-15 characters via fillText. Typical draw count is
+// 300-500 fillText calls/frame — well within budget. If profiling shows
+// issues on weak devices, pre-rendering characters to a sprite sheet
+// (drawImage instead of fillText) is the optimization path.
+// ============================================================
+function drawMatrix(ctx, w, h, theme, t) {
+  // Slow trail decay — characters leave persistent tails
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.06)';
+  ctx.fillRect(0, 0, w, h);
+
+  ensureMatrix(w, h);
+  analyser.getByteFrequencyData(freqData);
+
+  // Same bin subsampling as bars mode
+  const rawBins = Math.floor(analyser.frequencyBinCount * 0.38);
+  const binStep = rawBins / MATRIX_COL_COUNT;
+
+  ctx.font = `bold ${matrixCharH}px monospace`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+
+  for (let i = 0; i < MATRIX_COL_COUNT; i++) {
+    const col = matrixColumns[i];
+    const binIndex = Math.floor(i * binStep);
+    const amplitude = freqData[binIndex] / 255;
+
+    // Aggressive cubic falloff — only strongly active bins are visible
+    const brightness = amplitude * amplitude * amplitude;
+
+    // Advance the rain regardless of visibility
+    col.headY += col.speed;
+
+    // Occasional character mutation for the flicker effect
+    if (Math.random() < 0.03) {
+      const mutIdx = Math.floor(Math.random() * col.chars.length);
+      col.chars[mutIdx] = MATRIX_CHARS[Math.floor(Math.random() * MATRIX_CHARS.length)];
+    }
+
+    // Reset when the trail has fully exited the canvas
+    if (col.headY > h + matrixCharH * (MATRIX_TRAIL_LEN + 2)) {
+      col.headY = -matrixCharH * Math.floor(Math.random() * 8);
+      // Refresh character set on reset
+      for (let r = 0; r < col.chars.length; r++) {
+        col.chars[r] = MATRIX_CHARS[Math.floor(Math.random() * MATRIX_CHARS.length)];
+      }
+    }
+
+    // Skip drawing for invisible columns
+    if (brightness < 0.008) continue;
+
+    const color = theme.color(i, MATRIX_COL_COUNT, t);
+    ctx.fillStyle = color;
+
+    // Draw the falling trail: head is brightest, fading behind
+    const headRow = Math.floor(col.headY / matrixCharH);
+
+    for (let r = 0; r < MATRIX_TRAIL_LEN; r++) {
+      const rowY = (headRow - r) * matrixCharH;
+
+      // Clip to canvas bounds
+      if (rowY < -matrixCharH || rowY > h) continue;
+
+      // Trail fade: bright at head, decaying behind
+      const trailAlpha = r === 0 ? 1.0 : Math.pow(1 - r / MATRIX_TRAIL_LEN, 1.5);
+      const alpha = brightness * trailAlpha;
+      if (alpha < 0.02) continue;
+
+      ctx.globalAlpha = alpha;
+      const charIdx = ((headRow - r) % col.chars.length + col.chars.length) % col.chars.length;
+      ctx.fillText(col.chars[charIdx], col.x, rowY);
+    }
+  }
+
+  ctx.globalAlpha = 1.0;
+}
+
+// ============================================================
+// Start / stop
 // ============================================================
 export function startViz() {
   if (vizAnimFrame) return;
