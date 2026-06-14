@@ -797,7 +797,6 @@ function getTermSingleEggs() {
     () => makeEggLines('echo $SHELL', '/bin/bash'),
     () => makeEggLines('echo "Hello, World!"', 'Hello, World!'),
     () => makeEggLines("alias play='listen --with-feeling'"),
-    () => makeEggLines('sudo rm -rf /silence', '', TERM_ROOT_PROMPT),
     () => makeEggLines('cat /dev/urandom | head -1', generateGarbage()),
     () => makeEggLines('ping 127.0.0.1', '64 bytes from 127.0.0.1: time=0.042ms'),
     () => makeEggLines('man bass', 'No manual entry for bass'),
@@ -868,20 +867,60 @@ function getTermMultiEggs(state, els) {
       { text: 'Segmentation fault (core dumped)', isOutput: true },
       { text: '', prompt: TERM_PROMPT, isOutput: true },
     ],
+    // sudo rm -rf /silence — 10 blank lines then root prompt return
+    () => {
+      const lines = [{ text: 'sudo rm -rf /silence', prompt: TERM_PROMPT }];
+      for (let i = 0; i < 10; i++) lines.push({ text: '', isOutput: true });
+      lines.push({ text: '', prompt: TERM_ROOT_PROMPT });
+      return lines;
+    },
     // apt reel (2 lines)
     () => makeEggLines('apt reel', 'ASCII Tape Cassette?'),
     // aptitude reel — "no easter eggs" (2 lines)
     () => makeEggLines('aptitude reel', 'There are no Easter Eggs in this program.'),
     // aptitude -vvvvvvv reel — ASCII tape cassette (~9 lines)
+    // Interior width = 26 chars between │s, matching top/bottom borders
     () => makeEggLines('aptitude -vvvvvvv reel', [
-      '   ┌──────────────────────────┐',
-      '   │  ╭────╮  R E E L  ╭────╮│',
-      '   │  │ ◎  │           │  ◎ ││',
-      '   │  ╰────╯           ╰────╯│',
-      '   │ ░░░░░░░░░░░░░░░░░░░░░░░ │',
-      '   │  ▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔ │',
-      '   └──────────────────────────┘',
+      '   \u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2510',
+      '   \u2502  \u256d\u2500\u2500\u2500\u2500\u256e  R E E L  \u256d\u2500\u2500\u2500\u2500\u256e \u2502',
+      '   \u2502  \u2502 \u25ce  \u2502           \u2502  \u25ce \u2502 \u2502',
+      '   \u2502  \u2570\u2500\u2500\u2500\u2500\u256f           \u2570\u2500\u2500\u2500\u2500\u256f \u2502',
+      '   \u2502 \u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591 \u2502',
+      '   \u2502  \u2594\u2594\u2594\u2594\u2594\u2594\u2594\u2594\u2594\u2594\u2594\u2594\u2594\u2594\u2594\u2594\u2594\u2594\u2594\u2594\u2594\u2594  \u2502',
+      '   \u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518',
     ]),
+    // claude && /skill quote — movie quotes from hacker/sci-fi films
+    () => {
+      const quotes = [
+        // Hackers
+        ['There is no right and wrong.', "There's only fun and boring."],
+        ['The pool on the roof must have a leak.'],
+        ["So, uh, what's your interest in Kate Libby, eh?", 'Academic? Purely sexual?', 'Homicidal.'],
+        ['Remember, hacking is more than just a crime.', "It's a survival trait."],
+        ['HACK THE PLANET!'],
+        // Tron
+        ['End of line.', '.', '.', '.', '.', '.', '.', '.', '.', '.', '.'],
+        ['Greetings, programs.'],
+        ["That's Tron. He fights for the Users."],
+        ['Flynn! Am I still to create the perfect system?', '...Yeah?'],
+        ['I fight for the Users!'],
+        // The Matrix
+        ["No, Neo. I'm trying to tell you that", "when you're ready, you won't have to."],
+        ['You have to let it all go, Neo.', 'Fear, doubt, and disbelief. Free your mind.'],
+        ['There is no spoon.'],
+        ["Never send a human to do a machine's job."],
+        ['Did you know that the first Matrix was designed to be a perfect human world? Where none suffered, where everyone would be happy. It was a disaster. No one would accept the program.'],
+        // WarGames
+        ['Greetings, Professor Falken.'],
+        ['A strange game.', 'The only winning move is not to play.', 'How about a nice game of chess?'],
+        ['Listen carefully. Path. Follow path. Gate. Open gate. Through gate. Close gate. Last ferry 6:37. Run. Run. Run.'],
+        ["I loved it when you nuked Las Vegas. Suitably biblical ending to the place, don't you think?"],
+        // WarGames — stalemate with tic-tac-toe
+        [' X \u2502 O \u2502 X ', '\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u253c\u2500\u2500\u2500', ' O \u2502 X \u2502 O ', '\u2500\u2500\u2500\u253c\u2500\u2500\u2500\u253c\u2500\u2500\u2500', ' X \u2502 O \u2502 X ', '', 'A strange game.', 'The only winning move is not to play.'],
+      ];
+      const q = quotes[Math.floor(Math.random() * quotes.length)];
+      return makeEggLines('claude && /skill quote', q);
+    },
   ];
 }
 
@@ -983,9 +1022,9 @@ function drawTerminal(ctx, w, h, theme, t) {
     if (y < -lineSpacing || y > h + lineSpacing) continue;
 
     if (line.type === 'freq') {
-      // Prompt prefix — dimmer
+      // Prompt prefix
       ctx.fillStyle = promptColor;
-      ctx.globalAlpha = 0.35;
+      ctx.globalAlpha = 0.5;
       ctx.textAlign = 'left';
       ctx.fillText(TERM_PROMPT, 4, y);
 
@@ -1005,6 +1044,13 @@ function drawTerminal(ctx, w, h, theme, t) {
         const lx = promptWidth + 4 + b * labelSlotWidth;
         ctx.textAlign = 'center';
         ctx.fillText(TERM_FREQ_LABELS[b], lx + labelSlotWidth / 2, y);
+
+        // White-hot overlay on peaks — same technique as Matrix Rain heads
+        if (brightness > 0.5) {
+          ctx.fillStyle = '#fff';
+          ctx.globalAlpha = Math.min(0.9, (brightness - 0.5) * 1.8);
+          ctx.fillText(TERM_FREQ_LABELS[b], lx + labelSlotWidth / 2, y);
+        }
       }
     } else {
       // Easter egg line
@@ -1014,7 +1060,7 @@ function drawTerminal(ctx, w, h, theme, t) {
       if (prompt) {
         // Command line: prompt + command text
         ctx.fillStyle = promptColor;
-        ctx.globalAlpha = 0.35;
+        ctx.globalAlpha = 0.5;
         ctx.textAlign = 'left';
         ctx.fillText(prompt, 4, y);
 
