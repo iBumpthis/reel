@@ -37,6 +37,7 @@ export function loadConfig() {
     allowedExtensions: file.allowedExtensions ?? DEFAULT_EXTENSIONS,
     autoTagDepth: file.autoTagDepth ?? 0,
     autoTagExclude: file.autoTagExclude ?? [],
+    tagRules: file.tagRules ?? [],
   };
 
   // Validate required fields
@@ -73,6 +74,36 @@ export function loadConfig() {
     config.autoTagExclude = [];
   }
   config.autoTagExclude = config.autoTagExclude.map(s => String(s).toLowerCase());
+
+  // Validate tag rules
+  if (!Array.isArray(config.tagRules)) {
+    config.tagRules = [];
+  }
+  config.tagRules = config.tagRules.filter(rule => {
+    if (!rule || typeof rule !== 'object') return false;
+    if (!rule.match || typeof rule.match !== 'string') {
+      console.warn(`[reel] Skipping invalid tag rule (missing "match"): ${JSON.stringify(rule)}`);
+      return false;
+    }
+    if (!rule.tag || typeof rule.tag !== 'string') {
+      console.warn(`[reel] Skipping invalid tag rule (missing "tag"): ${JSON.stringify(rule)}`);
+      return false;
+    }
+    return true;
+  });
+
+  // Normalize per-library autoTag config (depth/exclude on library objects)
+  for (const lib of config.libraries) {
+    if (lib.autoTagDepth != null) {
+      lib.autoTagDepth = Math.max(0, Math.floor(Number(lib.autoTagDepth) || 0));
+    }
+    if (lib.autoTagExclude != null) {
+      if (!Array.isArray(lib.autoTagExclude)) {
+        lib.autoTagExclude = [];
+      }
+      lib.autoTagExclude = lib.autoTagExclude.map(s => String(s).toLowerCase());
+    }
+  }
 
   return config;
 }

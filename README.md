@@ -29,6 +29,14 @@ media libraries.
 Reel reads `config.json` from the working directory. Environment variables
 override file values where noted.
 
+> **Docker users:** The `config.json` that the container reads is the one in
+> the `deploy/` directory (bind-mounted via `./config.json:/app/config.json:ro`
+> in docker-compose). The `./` path resolves relative to the compose file's
+> directory, **not** the project root. Editing a `config.json` elsewhere has no
+> effect on the running container. After editing `deploy/config.json`, restart
+> the container: `docker compose down && docker compose up -d` from the
+> `deploy/` directory. No `--build` is needed for config-only changes.
+
 ```json
 {
   "libraries": [
@@ -40,19 +48,23 @@ override file values where noted.
   "allowedExtensions": [
     "mp4", "mkv", "webm", "avi", "mov", "m4v",
     "mp3", "m4a", "wav", "flac", "ogg", "opus", "aac", "wma"
-  ]
+  ],
+  "autoTagDepth": 0,
+  "autoTagExclude": [],
+  "tagRules": []
 }
 ```
 
 | Field | Required | Env Override | Notes |
 |-------|----------|-------------|-------|
-| `libraries` | Yes | — | Array of `{name, path}`. Names must be unique. Paths are absolute filesystem paths to media directories. |
+| `libraries` | Yes | — | Array of `{name, path}`. Names must be unique. Paths are absolute filesystem paths to media directories. Per-library `autoTagDepth` and `autoTagExclude` overrides are optional. |
 | `dbPath` | Yes | `REEL_DB_PATH` | Path to the SQLite database file. Created automatically if it doesn't exist. |
 | `port` | No | `REEL_PORT` | Default `32410`. |
 | `host` | No | `REEL_HOST` | Default `0.0.0.0`. |
 | `allowedExtensions` | No | — | File extensions to index. Default includes all supported formats. |
-| `autoTagDepth` | No | — | Number of directory segments (from library root) to auto-tag on scan. Default `0` (disabled). |
-| `autoTagExclude` | No | — | Array of directory names to skip when auto-tagging (case-insensitive). |
+| `autoTagDepth` | No | — | Number of directory segments (from library root) to auto-tag on scan. Default `0` (disabled). Can be overridden per-library. |
+| `autoTagExclude` | No | — | Array of directory names to skip when auto-tagging (case-insensitive). Can be overridden per-library. |
+| `tagRules` | No | — | Array of `{match, tag}` keyword rules for filename-based auto-tagging. See below. |
 
 ### Auto-Tagging
 
@@ -75,6 +87,62 @@ appears in `autoTagExclude`.
 With this config, the file above would be auto-tagged `EDC Las Vegas 2026`
 (the `Concerts` segment is excluded). Tags are additive — auto-tagging never
 removes existing tags, and manually-set tags are unaffected.
+
+#### Per-Library Auto-Tag Config
+
+Libraries can override the global `autoTagDepth` and `autoTagExclude`. This
+is useful when different libraries have different directory structures:
+
+```json
+{
+  "libraries": [
+    { "name": "Music", "path": "/media/music", "autoTagDepth": 0 },
+    { "name": "Video", "path": "/media/video", "autoTagDepth": 1, "autoTagExclude": ["Misc"] }
+  ],
+  "autoTagDepth": 2,
+  "autoTagExclude": ["Concerts"]
+}
+```
+
+In this example, the Music library disables directory auto-tagging (relying
+on embedded tags instead), while the Video library uses depth 1 with its own
+exclude list. Libraries without overrides fall back to the global values.
+
+### Tag Rules (Filename Keyword Matching)
+
+Tag rules apply tags based on keywords found in filenames. This complements
+directory-based auto-tagging for cases where the useful metadata is in the
+filename rather than the directory structure.
+
+```json
+{
+  "tagRules": [
+    { "match": "EDC", "tag": "EDC" },
+    { "match": "Lost Lands", "tag": "Lost Lands" },
+    { "match": "Rampage", "tag": "Rampage" }
+  ]
+}
+```
+
+Each rule checks whether the filename contains the `match` string
+(case-insensitive). If it does, the `tag` is applied. Like directory
+auto-tagging, tag rules are additive and never remove existing tags.
+
+For example, with the rules above, a file named
+`Eptic - EDC Orlando Virtual Rave-A-Thon (2020).mp4` would be tagged `EDC`.
+
+### Embedded Metadata (ID3 Tags)
+
+For audio files (MP3, M4A, FLAC, OGG, Opus, AAC, WAV, WMA), the scanner
+reads embedded ID3/M4A tags and uses them for artist, title, album, year,
+and track number. This takes priority over filename parsing — embedded tags
+are used when present, with `parseFilename()` as the fallback.
+
+Video files continue using filename parsing only (concert recordings rarely
+have meaningful embedded metadata).
+
+Reel never writes to media files. The database is the sole source of truth
+for user-edited metadata; embedded tags are read-only source data.
 
 ## Usage
 
@@ -308,7 +376,7 @@ with appropriate HTTP status codes.
 | GET | `/api/health` | `{ ok, name, version }` |
 | GET | `/api/library` | Paginated media list with search, filter, sort |
 | GET | `/api/media/:id` | Full media record with markers, tags, stream URL |
-| PATCH | `/api/media/:id` | Update metadata (title, artist, year, description) |
+| PATCH | `/api/media/:id` | Update metadata (title, artist, album, year, trackNumber, description) |
 | POST | `/api/media/:id/markers` | Replace markers (text or JSON array) |
 | DELETE | `/api/media/:id/markers` | Clear all markers |
 | GET | `/api/media/:id/markers/export` | Markers as re-importable plain text |
@@ -330,7 +398,7 @@ with appropriate HTTP status codes.
 | `ext` | Filter by file extension |
 | `artist` | Filter by exact artist name |
 | `tag` | Comma-separated tag names (AND logic) |
-| `sort` | `title`, `artist`, `year`, `mtime`, `size`, `created` (default: `mtime`) |
+| `sort` | `title`, `artist`, `album`, `year`, `mtime`, `size`, `created` (default: `mtime`) |
 | `order` | `asc` or `desc` (default: `desc`) |
 | `limit` | Page size, 1–200 (default: 50) |
 | `cursor` | Opaque pagination token from `nextCursor` |

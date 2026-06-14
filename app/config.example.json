@@ -10,5 +10,6 @@
     "mp3", "m4a", "wav", "flac", "ogg", "opus", "aac", "wma"
   ],
   "autoTagDepth": 0,
-  "autoTagExclude": []
+  "autoTagExclude": [],
+  "tagRules": []
 }

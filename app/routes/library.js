@@ -1,11 +1,12 @@
 import { parseFilename } from '../services/metadata.js';
 
-const VALID_SORT = new Set(['title', 'artist', 'year', 'mtime', 'size', 'created']);
+const VALID_SORT = new Set(['title', 'artist', 'album', 'year', 'mtime', 'size', 'created']);
 // All sort expressions must be non-null so row-value cursor comparison
 // never hits NULL (which would silently drop rows from later pages).
 const SORT_COLUMN_MAP = {
   title: 'COALESCE(m.title, m.filename)',
   artist: 'COALESCE(m.artist, m.filename)',
+  album: 'COALESCE(m.album, m.filename)',
   year: 'COALESCE(m.year, 0)',
   mtime: 'm.mtime_ms',
   size: 'm.size_bytes',
@@ -140,7 +141,7 @@ export default async function libraryRoutes(fastify) {
     const sql = `
       SELECT m.id, m.library_id, l.name AS library_name, m.filename, m.ext,
              m.media_type, m.size_bytes, m.mtime_ms,
-             m.title, m.artist, m.year, m.description,
+             m.title, m.artist, m.year, m.album, m.description,
              m.created_at, m.updated_at,
              ${sortColumn} AS sort_value,
              (SELECT COUNT(*) FROM markers mk WHERE mk.media_id = m.id) AS marker_count
@@ -201,6 +202,7 @@ export default async function libraryRoutes(fastify) {
         title: row.title ?? parsed.title,
         artist: row.artist ?? parsed.artist,
         year: row.year ?? parsed.year,
+        album: row.album ?? null,
         description: row.description,
         tags: tagMap[row.id] ?? [],
         markerCount: row.marker_count,

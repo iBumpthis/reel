@@ -45,34 +45,63 @@ Full backend and frontend built across four development sessions:
 - **New query param:** `artist` filter on `GET /api/library`.
 - **Deployment fix:** README documents `chmod +x deploy/deploy.sh` requirement.
 
+### v1.2.0 — Smart Metadata & Tag Rules
+
+- **Embedded tag reading:** Scanner reads ID3/M4A tags from audio files using
+  `music-metadata`. Artist, title, album, year, and track number from embedded
+  tags take priority over filename parsing. Video files continue using filename
+  parsing only. Read-only — Reel never writes to media files.
+- **Schema migration 002:** `album` (TEXT) and `track_number` (INTEGER) columns
+  added to media table. FTS5 index rebuilt to include album in full-text search.
+- **Filename parsing cleanup:** `parseFilename()` now strips leading track
+  numbers (`01 `, `01. `, `04. `) and disc prefixes (`(Disc 2) `, `(CD 1) `)
+  before the artist/title split. Fixes garbage artist names from numbered
+  MP3 files.
+- **Tag rules engine:** Config-driven keyword matching against filenames for
+  auto-tagging. Rules are `{match, tag}` objects — case-insensitive substring
+  match applies the named tag. Complements directory-based auto-tagging for
+  event names embedded in filenames (EDC, Lost Lands, Rampage, etc.).
+- **Per-library auto-tag config:** Libraries can override global `autoTagDepth`
+  and `autoTagExclude`, allowing different tagging strategies per library
+  (e.g. Music disables directory tags while Video uses depth 1).
+- **Album in UI:** Album displayed on library cards (italic, below artist),
+  editable in inline metadata editor, available as a sort option, included
+  in CSV import/export.
+- **Config documentation:** README updated with config.json location warning
+  for Docker users (`deploy/` directory, not project root).
+- **Deployment note:** DB wipe recommended before first v1.2 scan to get clean
+  metadata from embedded tags. Existing DBs will work but won't benefit from
+  ID3 data for previously scanned files until the next fresh scan.
+
 ---
 
 ## Planned
 
-### v1.2 — Marker Workflow
+### v1.3 — Marker Workflow
 
 - Marker timestamp inline editing (not just label editing).
 - Per-marker PATCH endpoint (original plan spec, never built in v1.0).
 - Markers included in CSV export/import (currently metadata-only).
 - Individual marker export/import UI surfaced more prominently.
 
-### v1.3 — Technical Debt
+### v1.4 — Technical Debt + Branding
 
-Documented tradeoffs from v1.0 that are worth resolving:
+Documented tradeoffs from v1.0 and deferred polish:
 
+- Header logo/branding (SVG icon in place of plain "Reel" text).
 - CSV export formula injection escaping (leading `=`).
 - `USER node` in Dockerfile (one-line hardening + volume ownership).
 - Lockfile regeneration under Node 24.
 - FTS5 rebuild-on-every-edit → trigger-based sync (scale blocker).
 - Evaluate: benign inline-edit double-save race (Enter + blur).
 
-### v1.4 — Visualizer Upgrades
+### v1.5 — Visualizer Upgrades
 
 - Additional visualizer modes: circular/radial, spectrogram, particle field.
 - Visualizer mode selector (beyond the current bars/lines toggle).
 - Theme additions beyond the current three color palettes.
 
-### v1.5 — Feature Evaluation
+### v1.6 — Feature Evaluation
 
 Review deferred features from the original project plan and evaluate for
 inclusion based on real usage patterns:

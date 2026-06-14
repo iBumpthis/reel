@@ -289,6 +289,17 @@
   font-weight: 500;
 }
 
+/* Album — secondary to artist */
+.card-album {
+  font-size: 0.786rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-bottom: 4px;
+  font-style: italic;
+}
+
 /* Meta + tags on same row when space allows */
 .card-info-row {
   display: flex;

@@ -58,6 +58,8 @@ export default async function mediaRoutes(fastify) {
       title: row.title ?? parsed.title,
       artist: row.artist ?? parsed.artist,
       year: row.year ?? parsed.year,
+      album: row.album ?? null,
+      trackNumber: row.track_number ?? null,
       description: row.description,
       markers,
       tags,
@@ -90,6 +92,7 @@ export default async function mediaRoutes(fastify) {
 
     if ('title' in body) { fields.push('title = @title'); params.title = body.title; }
     if ('artist' in body) { fields.push('artist = @artist'); params.artist = body.artist; }
+    if ('album' in body) { fields.push('album = @album'); params.album = body.album; }
     if ('year' in body) {
       // Coerce to integer or null — SQLite's flexible typing would otherwise
       // store strings in the INTEGER column and break sort/compare.
@@ -101,6 +104,16 @@ export default async function mediaRoutes(fastify) {
         }
       }
       fields.push('year = @year'); params.year = year;
+    }
+    if ('trackNumber' in body) {
+      let tn = body.trackNumber;
+      if (tn != null) {
+        tn = parseInt(tn, 10);
+        if (!Number.isInteger(tn)) {
+          return reply.code(400).send({ error: 'trackNumber must be an integer or null' });
+        }
+      }
+      fields.push('track_number = @track_number'); params.track_number = tn;
     }
     if ('description' in body) { fields.push('description = @description'); params.description = body.description; }
 

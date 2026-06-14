@@ -292,6 +292,10 @@ function renderCard(item) {
     ? `<div class="card-artist">${escHtml(item.artist)}</div>`
     : '';
 
+  const albumHtml = item.album
+    ? `<div class="card-album">${escHtml(item.album)}</div>`
+    : '';
+
   // Tags as inline pills
   let tagsHtml = '';
   if (item.tags && item.tags.length > 0) {
@@ -313,6 +317,7 @@ function renderCard(item) {
           ${yearDisplay}
         </div>
         ${artistHtml}
+        ${albumHtml}
         <div class="card-info-row">
           <div class="card-meta">
             <span class="badge badge-${item.mediaType}">${item.mediaType}</span>
@@ -383,6 +388,10 @@ function toggleEdit(card, item) {
     <div class="edit-field">
       <label class="edit-label">Artist</label>
       <input type="text" id="editArtist" value="${escHtml(item.artist || '')}">
+    </div>
+    <div class="edit-field">
+      <label class="edit-label">Album</label>
+      <input type="text" id="editAlbum" value="${escHtml(item.album || '')}">
     </div>
     <div class="edit-field">
       <label class="edit-label">Year</label>
@@ -498,12 +507,13 @@ function toggleEdit(card, item) {
 
     const title = form.querySelector('#editTitle').value.trim() || null;
     const artist = form.querySelector('#editArtist').value.trim() || null;
+    const album = form.querySelector('#editAlbum').value.trim() || null;
     const yearVal = form.querySelector('#editYear').value.trim();
     const year = yearVal ? parseInt(yearVal, 10) : null;
     const description = form.querySelector('#editDesc').value.trim();
 
     try {
-      await api.updateMedia(item.id, { title, artist, year, description });
+      await api.updateMedia(item.id, { title, artist, album, year, description });
       await api.setMediaTags(item.id, itemTags);
       await refreshSidebarData();
 

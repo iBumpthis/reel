@@ -2,6 +2,12 @@ import { readdir, stat } from 'node:fs/promises';
 import { join, relative, extname, basename } from 'node:path';
 import { mediaTypeForExt } from './mime.js';
 import { parseFilename } from './metadata.js';
+import { parseFile } from 'music-metadata';
+
+/** Audio extensions where embedded tag reading is worthwhile. */
+const TAG_READABLE = new Set([
+  'mp3', 'm4a', 'flac', 'ogg', 'opus', 'aac', 'wav', 'wma',
+]);
 
 /**
  * Recursively walk a directory, yielding file paths.
@@ -49,8 +55,9 @@ async function* walkDir(dir, counters) {
  */
 export async function scanLibraries(config, db) {
   const allowedSet = new Set(config.allowedExtensions);
-  const autoTagDepth = config.autoTagDepth || 0;
-  const autoTagExcludeSet = new Set((config.autoTagExclude || []).map(s => s.toLowerCase()));
+  const globalAutoTagDepth = config.autoTagDepth || 0;
+  const globalAutoTagExclude = new Set((config.autoTagExclude || []).map(s => s.toLowerCase()));
+  const tagRules = config.tagRules || [];
 
   // Generate a unique scan ID (monotonic counter)
   const scanId = Date.now();
@@ -60,9 +67,11 @@ export async function scanLibraries(config, db) {
   const countMedia = db.prepare('SELECT COUNT(*) AS n FROM media WHERE library_id = ?');
   const upsertMedia = db.prepare(`
     INSERT INTO media (library_id, abs_path, rel_path, filename, ext, media_type,
-                       size_bytes, mtime_ms, title, artist, year, last_seen_scan)
+                       size_bytes, mtime_ms, title, artist, year, album, track_number,
+                       last_seen_scan)
     VALUES (@library_id, @abs_path, @rel_path, @filename, @ext, @media_type,
-            @size_bytes, @mtime_ms, @title, @artist, @year, @last_seen_scan)
+            @size_bytes, @mtime_ms, @title, @artist, @year, @album, @track_number,
+            @last_seen_scan)
     ON CONFLICT(abs_path) DO UPDATE SET
       rel_path = @rel_path,
       filename = @filename,
@@ -86,6 +95,16 @@ export async function scanLibraries(config, db) {
   const skippedLibraries = [];
   const counters = { brokenSymlinks: 0 };
 
+  // Build per-library auto-tag config lookup
+  const libAutoTagMap = new Map();
+  for (const lib of config.libraries) {
+    const depth = lib.autoTagDepth ?? globalAutoTagDepth;
+    const excludeSet = lib.autoTagExclude
+      ? new Set(lib.autoTagExclude.map(s => s.toLowerCase()))
+      : globalAutoTagExclude;
+    libAutoTagMap.set(lib.name, { depth, excludeSet });
+  }
+
   for (const lib of config.libraries) {
     const row = getLibrary.get(lib.name);
     if (!row) {
@@ -93,6 +112,7 @@ export async function scanLibraries(config, db) {
       continue;
     }
     const libraryId = row.id;
+    const autoTag = libAutoTagMap.get(lib.name);
 
     let libUpserts = 0;
     let walkFailed = false;
@@ -114,7 +134,28 @@ export async function scanLibraries(config, db) {
 
         const filename = basename(absPath);
         const relPath = relative(lib.path, absPath);
-        const { artist, title, year } = parseFilename(filename);
+        const parsed = parseFilename(filename);
+
+        // ID3 tag reading for audio files — fall back to parseFilename
+        let artist = parsed.artist;
+        let title = parsed.title;
+        let year = parsed.year;
+        let album = null;
+        let trackNumber = null;
+
+        if (mediaType === 'audio' && TAG_READABLE.has(ext)) {
+          try {
+            const meta = await parseFile(absPath, { skipCovers: true, duration: false });
+            const c = meta.common;
+            if (c.artist) artist = c.artist;
+            if (c.title) title = c.title;
+            if (c.album) album = c.album;
+            if (c.year) year = c.year;
+            if (c.track?.no) trackNumber = c.track.no;
+          } catch {
+            // Tag read failed — use parseFilename values (already set above)
+          }
+        }
 
         upsertMedia.run({
           library_id: libraryId,
@@ -128,27 +169,34 @@ export async function scanLibraries(config, db) {
           title,
           artist,
           year,
+          album,
+          track_number: trackNumber,
           last_seen_scan: scanId,
         });
 
-        // Auto-tag from directory path segments
-        if (autoTagDepth > 0) {
-          // Get the media ID (works for both insert and on-conflict update)
-          const mediaRow = getMediaByPath.get(absPath);
-          if (mediaRow) {
-            const segments = relPath.split(/[/\\]/).slice(0, -1); // drop filename
-            const tagSegments = segments
-              .slice(0, autoTagDepth)
-              .filter(seg => seg && !autoTagExcludeSet.has(seg.toLowerCase()));
+        // Get the media ID for tagging
+        const mediaRow = getMediaByPath.get(absPath);
+        if (!mediaRow) continue;
+        const mediaId = mediaRow.id;
 
-            for (const tagName of tagSegments) {
-              const normalized = tagName.toLowerCase();
-              let tagRow = findTag.get(normalized);
-              if (!tagRow) {
-                const tagResult = insertTag.run({ name: tagName, normalized });
-                tagRow = { id: tagResult.lastInsertRowid };
-              }
-              linkTag.run({ media_id: mediaRow.id, tag_id: tagRow.id });
+        // Auto-tag from directory path segments
+        if (autoTag.depth > 0) {
+          const segments = relPath.split(/[/\\]/).slice(0, -1); // drop filename
+          const tagSegments = segments
+            .slice(0, autoTag.depth)
+            .filter(seg => seg && !autoTag.excludeSet.has(seg.toLowerCase()));
+
+          for (const tagName of tagSegments) {
+            applyTag(tagName, mediaId, findTag, insertTag, linkTag);
+          }
+        }
+
+        // Filename-pattern tag rules (keyword matching)
+        if (tagRules.length > 0) {
+          const filenameLower = filename.toLowerCase();
+          for (const rule of tagRules) {
+            if (rule.match && filenameLower.includes(rule.match.toLowerCase())) {
+              applyTag(rule.tag, mediaId, findTag, insertTag, linkTag);
             }
           }
         }
@@ -188,6 +236,19 @@ export async function scanLibraries(config, db) {
   console.log(`[reel] Scan complete: ${totalUpserts} upserted, ${totalDeletes} deleted` +
     (skippedLibraries.length ? `, stale-delete skipped for: ${skippedLibraries.join(', ')}` : ''));
   return { scanId, totalUpserts, totalDeletes, skippedLibraries, brokenSymlinks: counters.brokenSymlinks };
+}
+
+/**
+ * Apply a tag to a media item (find-or-create + link).
+ */
+function applyTag(tagName, mediaId, findTag, insertTag, linkTag) {
+  const normalized = tagName.toLowerCase();
+  let tagRow = findTag.get(normalized);
+  if (!tagRow) {
+    const tagResult = insertTag.run({ name: tagName, normalized });
+    tagRow = { id: tagResult.lastInsertRowid };
+  }
+  linkTag.run({ media_id: mediaId, tag_id: tagRow.id });
 }
 
 /**
