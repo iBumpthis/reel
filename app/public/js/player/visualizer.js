@@ -695,6 +695,16 @@ function drawMatrix(ctx, w, h, theme, t) {
       ctx.globalAlpha = alpha;
       const charIdx = ((headRow - r) % col.chars.length + col.chars.length) % col.chars.length;
       ctx.fillText(col.chars[charIdx], col.x, rowY);
+
+      // White-hot head on peaks — only strong amplitudes push through
+      // the cubic falloff to reach the 0.15 threshold, so most heads
+      // stay in theme color and only genuine peaks go white.
+      if (r === 0 && brightness > 0.15) {
+        ctx.fillStyle = '#fff';
+        ctx.globalAlpha = Math.min(0.95, (brightness - 0.15) * 1.2);
+        ctx.fillText(col.chars[charIdx], col.x, rowY);
+        ctx.fillStyle = color;
+      }
     }
   }
 
