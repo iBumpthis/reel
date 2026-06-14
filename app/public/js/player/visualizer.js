@@ -1005,7 +1005,9 @@ function drawTerminal(ctx, w, h, theme, t) {
   // ---- Render visible lines bottom-to-top ----
   const totalLines = termLines.length;
   const startIdx = Math.max(0, totalLines - maxVisible);
-  const promptColor = theme.color(0, 16, t);
+  // Prompt uses a fixed neutral grey — readable on all theme backgrounds.
+  // Dim frequency labels still use the theme color for visual coherence.
+  const dimLabelColor = theme.color(0, 16, t);
 
   // Measure prompt width once
   ctx.font = `${charH}px monospace`;
@@ -1022,9 +1024,9 @@ function drawTerminal(ctx, w, h, theme, t) {
     if (y < -lineSpacing || y > h + lineSpacing) continue;
 
     if (line.type === 'freq') {
-      // Prompt prefix
-      ctx.fillStyle = promptColor;
-      ctx.globalAlpha = 0.5;
+      // Prompt prefix — fixed neutral grey, theme-independent
+      ctx.fillStyle = '#8a959e';
+      ctx.globalAlpha = 0.55;
       ctx.textAlign = 'left';
       ctx.fillText(TERM_PROMPT, 4, y);
 
@@ -1035,7 +1037,7 @@ function drawTerminal(ctx, w, h, theme, t) {
         const brightness = amp * amp;
         if (brightness < 0.01) {
           // Still show label very dimly for the terminal aesthetic
-          ctx.fillStyle = promptColor;
+          ctx.fillStyle = dimLabelColor;
           ctx.globalAlpha = 0.08;
         } else {
           ctx.fillStyle = theme.color(b, 16, t);
@@ -1058,9 +1060,9 @@ function drawTerminal(ctx, w, h, theme, t) {
       const text = line.text || '';
 
       if (prompt) {
-        // Command line: prompt + command text
-        ctx.fillStyle = promptColor;
-        ctx.globalAlpha = 0.5;
+        // Command line: prompt in neutral grey
+        ctx.fillStyle = '#8a959e';
+        ctx.globalAlpha = 0.55;
         ctx.textAlign = 'left';
         ctx.fillText(prompt, 4, y);
 
