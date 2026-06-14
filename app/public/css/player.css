@@ -441,12 +441,14 @@
   gap: 10px;
   padding-left: 10px;
   border-left: 1px solid var(--border-subtle);
+  flex-wrap: wrap;
 }
 .viz-options.hidden { display: none; }
 
 .viz-style-selector {
   display: flex;
   gap: 4px;
+  flex-wrap: wrap;
 }
 
 .viz-style-btn {
@@ -504,6 +506,10 @@
 .theme-dot-muted { background: linear-gradient(135deg, #6a7a8a, #8a9aaa); }
 .theme-dot-colorful { background: linear-gradient(135deg, #6C7EB7, #C278B0); }
 .theme-dot-rgb { background: conic-gradient(#ff4444, #44ff44, #4444ff, #ff4444); }
+.theme-dot-neon { background: linear-gradient(135deg, #00e5ff, #ff00e5); }
+.theme-dot-fire { background: linear-gradient(135deg, #ff4400, #ffcc00); }
+.theme-dot-matrix { background: linear-gradient(135deg, #003300, #00ff41); }
+.theme-dot-ocean { background: linear-gradient(135deg, #0a3d6b, #20c9b0); }
 
 .mode-notice {
   font-size: 0.786rem;

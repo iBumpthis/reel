@@ -136,6 +136,20 @@ h1, h2, h3 {
   font-weight: 700;
   letter-spacing: -0.02em;
   color: var(--text-primary);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.app-logo {
+  width: 22px;
+  height: auto;
+  color: var(--accent);
+  transition: color var(--transition-fast);
+}
+
+.app-title:hover .app-logo {
+  color: var(--accent-hover);
 }
 
 .app-version {
