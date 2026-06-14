@@ -681,8 +681,14 @@ function drawMatrix(ctx, w, h, theme, t) {
       // Clip to canvas bounds
       if (rowY < -matrixCharH || rowY > h) continue;
 
-      // Trail fade: bright at head, decaying behind
-      const trailAlpha = r === 0 ? 1.0 : Math.pow(1 - r / MATRIX_TRAIL_LEN, 1.5);
+      // Trail fade: head is full brightness, rest starts at 0.7 and decays.
+      // The 30% drop from head to second character makes the leading edge pop.
+      let trailAlpha;
+      if (r === 0) {
+        trailAlpha = 1.0;
+      } else {
+        trailAlpha = 0.7 * Math.pow(1 - (r - 1) / (MATRIX_TRAIL_LEN - 1), 1.5);
+      }
       const alpha = brightness * trailAlpha;
       if (alpha < 0.02) continue;
 

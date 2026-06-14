@@ -93,8 +93,11 @@
   opacity: 0;
   transition: opacity 0.25s ease;
 }
-.playback-frame.mode-video:hover .player-controls,
-.playback-frame.mode-visualizer:hover .player-controls,
+/* Video + visualizer: overlay at bottom, hover-reveal.
+   :not(:fullscreen) prevents the hover rule from overriding the
+   fullscreen idle-timer logic (hover specificity beats :fullscreen). */
+.playback-frame.mode-video:not(:fullscreen):hover .player-controls,
+.playback-frame.mode-visualizer:not(:fullscreen):hover .player-controls,
 .playback-frame .player-controls.cc-visible {
   opacity: 1;
 }
@@ -432,11 +435,16 @@
    ============================================================ */
 .mode-toolbar {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 12px;
+  gap: 6px;
   margin-top: 8px;
-  min-height: 34px;
-  flex-wrap: wrap;
+}
+
+.mode-toolbar-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .mode-toggles {
@@ -469,20 +477,12 @@
   color: var(--accent);
 }
 
-/* Viz options (style + theme, shown only in visualizer mode) */
-.viz-options {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding-left: 10px;
-  border-left: 1px solid var(--border-subtle);
-  flex-wrap: wrap;
-}
-
 .viz-style-selector {
   display: flex;
   gap: 4px;
   flex-wrap: wrap;
+  padding-left: 10px;
+  border-left: 1px solid var(--border-subtle);
 }
 
 .viz-style-btn {
