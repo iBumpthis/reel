@@ -242,11 +242,16 @@ Full backend and frontend built across four development sessions:
   and multi-line eggs (~1 in 400 lines, ~every 50s) inject shell commands,
   fake errors, and interactive output. Pool includes ~19 single-line entries
   (whoami, wrong-platform typos like `ipconfig /all` and `Get-Process`,
-  command-not-found errors) and ~8 multi-line entries (uptime with playback
+  command-not-found errors) and ~10 multi-line entries (uptime with playback
   position and bass/mid/high as load averages, stat with current track
-  metadata, ssh loop, fake segfault, apt/aptitude two-parter with ASCII tape
-  cassette art where v-count = line count). Cooldown prevents back-to-back
-  eggs (12-line minimum gap).
+  metadata, ssh loop, fake segfault, sudo rm -rf /silence with 10 blank
+  lines, apt/aptitude two-parter with ASCII tape cassette art where v-count
+  = line count, and `claude && /skill quote` with movie quotes from Hackers,
+  Tron, The Matrix, and WarGames — including a tic-tac-toe stalemate board).
+  Cooldown prevents back-to-back eggs (12-line minimum gap).
+- **White-hot peaks on frequency labels:** Same double-draw technique as
+  Matrix Rain heads — labels at high amplitude get a white overlay, punching
+  through on darker themes (muted, matrix, ocean).
 - **OLED protection:** Scrolling cycles all pixel positions. Easter egg
   responses break the prompt pattern at the left edge. Some eggs use
   alternate prompts (`root@reel:~#`) to shift left-edge characters.
