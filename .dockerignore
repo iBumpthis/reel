@@ -1,0 +1,3 @@
+# Prevent host-compiled native modules from overwriting
+# the Docker builder stages node_modules via COPY app/ .
+app/node_modules

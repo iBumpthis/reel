@@ -12,6 +12,6 @@ COPY --from=builder /build/node_modules ./node_modules
 COPY app/ .
 
 ENV NODE_ENV=production
-EXPOSE 32410
+EXPOSE 32411
 
 CMD ["node", "server.js"]
