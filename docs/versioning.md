@@ -151,16 +151,35 @@ Full backend and frontend built across four development sessions:
   save. Second save is a no-op with identical data. Benign — not worth a
   guard flag.
 
+### v1.5.0 — Logo/Branding + Visualizer Upgrades
+
+- **Header logo:** SVG icon (beamed eighth note with film reel sprocket hubs)
+  added to the app header on both library and player pages. Inline SVG uses
+  `currentColor` — renders in accent amber, transitions to accent-hover on
+  hover. Standalone logo file at `app/public/img/logo.svg`.
+- **Three new visualizer modes:**
+  - **Radial:** Frequency bars arranged in a 360° circle with mirrored inner
+    ring. Uses 80 bins with rounded line caps.
+  - **Spectrogram:** Scrolling time × frequency heatmap. Each theme provides
+    an `amplitudeColor(0-255)` function for mapping amplitude to heat color.
+    Scrolls at 2px per frame, clears on canvas resize.
+  - **Particles:** 180 audio-reactive particles. Bass energy drives velocity
+    force, mid-range drives opacity. Particles drift toward center during
+    silence. Lazy-initialized with canvas dimension tracking.
+- **Four new color themes:** Neon (cyan↔magenta), Fire (red→orange→yellow),
+  Matrix (green monochrome), Ocean (deep blue→teal). All seven themes include
+  `amplitudeColor` for spectrogram compatibility.
+- **FFT resolution bump:** `analyser.fftSize` increased from 256 to 2048,
+  giving the spectrogram 1024 frequency bins. Bars mode caps at 64 bins via
+  subsampling to preserve the existing visual density. Waveform mode benefits
+  from smoother data (2048 points vs 256).
+- **Viz options layout:** `flex-wrap` added to the viz-options and
+  viz-style-selector containers to handle the expanded button set on narrower
+  viewports.
+
 ---
 
 ## Planned
-
-### v1.5 — Logo/Branding + Visualizer Upgrades
-
-- Header logo/branding (SVG icon in place of plain "Reel" text).
-- Additional visualizer modes: circular/radial, spectrogram, particle field.
-- Visualizer mode selector (beyond the current bars/lines toggle).
-- Theme additions beyond the current three color palettes.
 
 ### v1.6 — Feature Evaluation
 

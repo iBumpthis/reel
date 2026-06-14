@@ -187,7 +187,9 @@ Browse, search, filter, and edit your media collection. Features include:
 Click any media item to open the player. Features include:
 
 - Video, audio, and visualizer playback modes
-- Frequency bars and waveform visualizer with three color themes
+- Five visualizer modes: frequency bars, waveform lines, radial, spectrogram,
+  and particle field
+- Seven color themes: muted, colorful, RGB, neon, fire, matrix, ocean
 - Custom transport controls (play/pause, seek, volume, speed, fullscreen)
 - Marker sidebar synced to playback position
 - Now-playing strip with previous/current/next marker pills
