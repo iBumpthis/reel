@@ -367,6 +367,7 @@ function renderCard(item) {
 function toggleEdit(card, item) {
   const existing = document.querySelector('.edit-form');
   if (existing) {
+    existing.closest('.media-card')?.classList.remove('editing');
     existing.remove();
     if (currentEditId === item.id) {
       currentEditId = null;
@@ -374,6 +375,7 @@ function toggleEdit(card, item) {
     }
   }
   currentEditId = item.id;
+  card.classList.add('editing');
 
   const form = document.createElement('div');
   form.className = 'edit-form';
@@ -496,6 +498,7 @@ function toggleEdit(card, item) {
 
   // Cancel
   form.querySelector('#editCancel').addEventListener('click', () => {
+    card.classList.remove('editing');
     form.remove();
     currentEditId = null;
   });
@@ -518,6 +521,7 @@ function toggleEdit(card, item) {
       await refreshSidebarData();
 
       elStatus.textContent = '';
+      card.classList.remove('editing');
       form.remove();
       currentEditId = null;
       toast('Saved', 'success');
@@ -534,6 +538,22 @@ function toggleEdit(card, item) {
 elScanBtn.addEventListener('click', async () => {
   elScanBtn.disabled = true;
   elScanStatus.textContent = 'Scanning...';
+
+  // Show progress indicator in the grid
+  const scanProgress = document.createElement('div');
+  scanProgress.className = 'scan-progress';
+  scanProgress.innerHTML = `
+    <div class="scan-spinner"></div>
+    <span>Scanning libraries<span class="scan-dots"></span></span>`;
+  elMediaGrid.prepend(scanProgress);
+
+  // Animate dots
+  let dots = 0;
+  const dotsEl = scanProgress.querySelector('.scan-dots');
+  const dotsTimer = setInterval(() => {
+    dots = (dots + 1) % 4;
+    dotsEl.textContent = '.'.repeat(dots);
+  }, 400);
 
   try {
     const result = await api.scan();
@@ -554,6 +574,8 @@ elScanBtn.addEventListener('click', async () => {
     elScanStatus.textContent = 'Scan failed';
     toast(`Scan failed: ${err.message}`, 'error');
   } finally {
+    clearInterval(dotsTimer);
+    scanProgress.remove();
     elScanBtn.disabled = false;
   }
 });

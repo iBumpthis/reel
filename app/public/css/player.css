@@ -648,7 +648,7 @@
   border-color: var(--error);
 }
 
-/* Inline label editing */
+/* Inline marker editing */
 .marker-label-input {
   font-family: var(--font-base);
   font-size: 0.857rem;
@@ -658,6 +658,28 @@
   background: var(--bg-primary);
   color: var(--text-primary);
   width: 100%;
+}
+.marker-time-input {
+  font-family: var(--font-mono);
+  font-size: 0.786rem;
+  padding: 1px 4px;
+  border: 1px solid var(--border-focus);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  color: var(--accent);
+  width: 56px;
+  text-align: right;
+  flex-shrink: 0;
+}
+.marker-time-input.input-error {
+  border-color: var(--error);
+}
+.marker-edit-btn.save {
+  color: var(--success);
+}
+.marker-edit-btn.save:hover {
+  color: var(--text-primary);
+  background: var(--success-muted);
 }
 
 /* No markers state */
