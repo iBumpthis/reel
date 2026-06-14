@@ -187,8 +187,9 @@ Click any media item to open the player. Features include:
 - Now-playing strip with previous/current/next marker pills
 - Fullscreen marker toast on track transitions
 - Browse overlay to switch media without returning to the library
-- Inline marker editing and deletion
+- Inline marker editing (label and timestamp) and deletion
 - Marker text import (paste a tracklist)
+- Marker export to clipboard
 - Keyboard shortcuts: Space (play/pause), ←/→ (±5s), ↑/↓ (volume), M (mute), F (fullscreen)
 
 ## Security Model
@@ -366,6 +367,17 @@ re-importable text with `GET /api/media/:id/markers/export`. See
 [docs/import-format.md](docs/import-format.md#marker-text-import) for
 supported formats.
 
+### Markers (CSV — Bulk)
+
+Export all markers across the library as CSV with
+`GET /api/export?format=markers-csv`. Columns: `filename`, `rel_path`,
+`start`, `end`, `label`. Filter by library with `?lib=name`.
+
+Re-import with `POST /api/import/markers` (same CSV format). Markers are
+replaced per matched media item — all existing markers for a matched file
+are deleted and the CSV rows are inserted. Matching uses `rel_path` first,
+then `filename` as fallback.
+
 ## API Reference
 
 All endpoints return JSON unless noted. Errors return `{ error: "message" }`
@@ -378,6 +390,7 @@ with appropriate HTTP status codes.
 | GET | `/api/media/:id` | Full media record with markers, tags, stream URL |
 | PATCH | `/api/media/:id` | Update metadata (title, artist, album, year, trackNumber, description) |
 | POST | `/api/media/:id/markers` | Replace markers (text or JSON array) |
+| PATCH | `/api/media/:id/markers/:markerId` | Update individual marker (label, startSeconds, endSeconds) |
 | DELETE | `/api/media/:id/markers` | Clear all markers |
 | GET | `/api/media/:id/markers/export` | Markers as re-importable plain text |
 | GET | `/api/tags` | All tags with usage counts |
@@ -385,7 +398,8 @@ with appropriate HTTP status codes.
 | POST | `/api/media/:id/tags` | Replace tags for a media item |
 | POST | `/api/scan` | Trigger library scan |
 | POST | `/api/import` | Bulk metadata import (CSV or JSON) |
-| GET | `/api/export` | Full metadata export (`?format=json\|csv`, `?lib=name`) |
+| POST | `/api/import/markers` | Bulk marker import (CSV or JSON, replace-all per media item) |
+| GET | `/api/export` | Full metadata export (`?format=json\|csv\|markers-csv`, `?lib=name`) |
 | GET/HEAD | `/stream/:id` | Range-based media streaming |
 
 ### Library Query Parameters
