@@ -188,7 +188,9 @@ Click any media item to open the player. Features include:
 
 - Video, audio, and visualizer playback modes
 - Eight visualizer modes: frequency bars, waveform lines, radial, spectrogram,
-  particle field, nova, matrix rain, and terminal
+  particle field, nova, matrix rain, and terminal (scrolling bash-style
+  frequency display with easter egg system — fake shell commands, movie quotes,
+  ASCII art)
 - Seven color themes: muted, colorful, RGB, neon, fire, matrix, ocean
 - Custom transport controls (play/pause, seek, volume, speed, fullscreen)
 - Marker sidebar synced to playback position
