@@ -256,13 +256,67 @@ Full backend and frontend built across four development sessions:
   responses break the prompt pattern at the left edge. Some eggs use
   alternate prompts (`root@reel:~#`) to shift left-edge characters.
 
+### v1.8.0 — Stability & Review
+
+A stability pass after three feature-heavy visualizer sessions (v1.5–v1.7).
+Full read-through of the frontend and backend with fixes for the concrete
+problems it surfaced. No new visualizer modes (those move to v1.9).
+
+- **Mid-stream decode recovery:** `MEDIA_ERR_DECODE` (error code 3) is now
+  split by timing. An error within the first 2 seconds is treated as codec
+  incompatibility (unrecoverable — surfaced with a clear message). An error
+  during active playback is treated as mid-stream corruption (common from
+  some yt-dlp backup captures): the player reloads the source, seeks ~3s past
+  the bad segment, and resumes, with a *"Skipped bad segment at H:MM:SS"*
+  toast. Capped at 5 recovery attempts per page load with a 1s cooldown
+  between attempts; exhaustion surfaces *"Too many decode errors — file may
+  be corrupt."* The visualizer's audio graph survives the reload because the
+  `MediaElementAudioSourceNode` stays bound to the element across `src`
+  reassignment.
+- **Scanner: resilient directory walk.** An unreadable subdirectory
+  (permission change, transient I/O, vanished mid-walk) is now counted and
+  skipped instead of aborting the entire library walk. The scanner ingests
+  every directory it *can* read. Stale-delete is still suppressed for any
+  library whose walk hit one or more errors, so a partial read can never
+  delete rows that were merely unreadable this pass — the same fail-safe as
+  before, now without losing the readable files. Reported via a new
+  `walkErrors` count in the scan response.
+- **Scanner: symlink cycle guard.** A symlink pointing at an ancestor
+  directory previously recursed until the stack/heap was exhausted. Directory
+  symlink targets are now resolved with `realpath` and skipped if already
+  visited (per-library), seeded with the library root.
+- **Default port aligned to 32411.** The config default fallback, example
+  config, systemd unit, and example compose were still `32410` (TapeC's
+  port) while the real deploy and Dockerfile `EXPOSE` used `32411`. All
+  Reel-facing references now default to `32411` to avoid a silent collision
+  with TapeC on a bare local run. (The historical redesign plan retains its
+  original `32410` as an archival snapshot.)
+- **Hardening:** `exportMarkers` now checks response status before copying
+  (an error body no longer gets copied to the clipboard as "success");
+  `media.ext`/`item.ext` uppercase calls in the player and browse overlay
+  are guarded against a missing extension.
+- **"Term" → "Terminal":** Visualizer style button relabeled in both the
+  main toolbar and the fullscreen bar.
+- **Test harness:** First automated tests (`app/test/`, `npm test` via
+  `node --test`, zero dependencies) covering the pure logic most exposed to
+  silent regression — the marker parser, the filename metadata parser, and
+  the shared time/byte formatters. 40 assertions, all green.
+- **FTS5 trigger-sync evaluation:** Documented and empirically validated a
+  move from full-rebuild-on-every-write to incremental trigger sync
+  (~1200× faster edits at 50K rows; the deferred "false trigger fires"
+  blocker solved with a `WHEN`-gated UPDATE trigger). Evaluation only — see
+  `docs/fts-trigger-evaluation.md`. Proposed for v1.8.1.
+
 ---
 
 ## Planned
 
-### v1.8 — Visualizer Pack
+### v1.9 — Visualizer Pack
 
-Additional visualizer modes (traditional render variations). Scope TBD.
+Additional visualizer modes (traditional render variations). Scope TBD —
+possible directions include waveform circle, frequency mountain, starfield,
+kaleidoscope, and classic scope. May include a toolbar layout adjustment if
+the button row passes comfortable density.
 
 ### Future — Feature Evaluation
 

@@ -1,4 +1,4 @@
-import { readdir, stat } from 'node:fs/promises';
+import { readdir, stat, realpath } from 'node:fs/promises';
 import { join, relative, extname, basename } from 'node:path';
 import { mediaTypeForExt } from './mime.js';
 import { parseFilename } from './metadata.js';
@@ -14,26 +14,60 @@ const TAG_READABLE = new Set([
  * Uses async fs.promises so the event loop stays responsive.
  * Symlinks are resolved via stat() so linked files/dirs are included;
  * broken links are counted and skipped.
+ *
+ * Resilience: an unreadable directory (permission change, transient I/O,
+ * or a directory that vanished mid-walk) is counted in counters.walkErrors
+ * and skipped rather than aborting the whole library walk. scanLibraries
+ * treats a non-zero per-library walkError count the same as a hard failure
+ * for stale-delete purposes, so a partial read can never trigger deletion
+ * of rows that were simply unreadable this pass.
+ *
+ * Cycle safety: a symlinked directory is only recursed into after resolving
+ * its real path and checking it against `visited`. A symlink pointing at an
+ * ancestor would otherwise recurse until the stack/heap is exhausted.
  */
-async function* walkDir(dir, counters) {
-  const entries = await readdir(dir, { withFileTypes: true });
+async function* walkDir(dir, counters, visited) {
+  let entries;
+  try {
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch (err) {
+    counters.walkErrors++;
+    console.warn(`[reel] Cannot read directory, skipping: ${dir} (${err.code || err.message})`);
+    return;
+  }
+
   for (const entry of entries) {
     const full = join(dir, entry.name);
     if (entry.isDirectory()) {
-      yield* walkDir(full, counters);
+      yield* walkDir(full, counters, visited);
     } else if (entry.isFile()) {
       yield full;
     } else if (entry.isSymbolicLink()) {
       // Resolve the link target; recurse into dirs, yield files
+      let target;
       try {
-        const target = await stat(full); // stat follows symlinks
-        if (target.isDirectory()) {
-          yield* walkDir(full, counters);
-        } else if (target.isFile()) {
-          yield full;
-        }
+        target = await stat(full); // stat follows symlinks
       } catch {
         counters.brokenSymlinks++;
+        continue;
+      }
+
+      if (target.isDirectory()) {
+        let real;
+        try {
+          real = await realpath(full);
+        } catch {
+          counters.brokenSymlinks++;
+          continue;
+        }
+        if (visited.has(real)) {
+          console.warn(`[reel] Symlink cycle skipped: ${full} -> ${real}`);
+          continue;
+        }
+        visited.add(real);
+        yield* walkDir(full, counters, visited);
+      } else if (target.isFile()) {
+        yield full;
       }
     }
   }
@@ -43,11 +77,15 @@ async function* walkDir(dir, counters) {
  * Scan all configured libraries and upsert media records.
  *
  * Stale deletion is scoped PER LIBRARY and is skipped for any library that:
- *   a) threw during its walk (mount missing, permission change), or
- *   b) walked zero media files while the DB has existing rows for it
+ *   a) threw during its walk (unexpected error not handled inside walkDir), or
+ *   b) hit one or more unreadable directories during its walk (permission
+ *      change, transient I/O, vanished mid-walk — counted in walkErrors), or
+ *   c) walked zero media files while the DB has existing rows for it
  *      (mounted-but-empty, e.g. wrong volume path).
- * This prevents a transient mount failure from cascading into deletion of
- * all media rows — and with them, all markers and tag links (ON DELETE CASCADE).
+ * This prevents a transient mount/permission failure from cascading into
+ * deletion of all media rows — and with them, all markers and tag links
+ * (ON DELETE CASCADE). The walk still ingests every directory it CAN read;
+ * only the stale-delete step is suppressed when the read was incomplete.
  *
  * Tag-read optimization (v1.4): embedded tag reading via music-metadata is
  * skipped for files that already exist in the DB. The upsert's ON CONFLICT
@@ -102,7 +140,7 @@ export async function scanLibraries(config, db) {
   let totalDeletes = 0;
   let tagReadsSkipped = 0;
   const skippedLibraries = [];
-  const counters = { brokenSymlinks: 0 };
+  const counters = { brokenSymlinks: 0, walkErrors: 0 };
 
   // Build per-library auto-tag config lookup
   const libAutoTagMap = new Map();
@@ -125,9 +163,20 @@ export async function scanLibraries(config, db) {
 
     let libUpserts = 0;
     let walkFailed = false;
+    const errorsBefore = counters.walkErrors;
+
+    // Per-library cycle-detection set, seeded with the library root's real
+    // path so a symlink back to the root is caught on the first hop.
+    const visited = new Set();
+    try {
+      visited.add(await realpath(lib.path));
+    } catch {
+      // Root unresolvable (mount down) — walkDir's readdir will fail and be
+      // counted, which suppresses stale-delete below. Nothing to seed.
+    }
 
     try {
-      for await (const absPath of walkDir(lib.path, counters)) {
+      for await (const absPath of walkDir(lib.path, counters, visited)) {
         const ext = extname(absPath).slice(1).toLowerCase();
         if (!allowedSet.has(ext)) continue;
 
@@ -228,14 +277,18 @@ export async function scanLibraries(config, db) {
     totalUpserts += libUpserts;
 
     // Stale-delete safety: never delete from a library whose walk failed,
-    // or that returned zero files when the DB previously had rows for it.
+    // that hit unreadable directories this pass, or that returned zero files
+    // when the DB previously had rows for it.
+    const libWalkErrors = counters.walkErrors - errorsBefore;
     const existingCount = countMedia.get(libraryId).n;
-    if (walkFailed || (libUpserts === 0 && existingCount > 0)) {
+    if (walkFailed || libWalkErrors > 0 || (libUpserts === 0 && existingCount > 0)) {
       skippedLibraries.push(lib.name);
-      console.warn(
-        `[reel] Skipping stale-delete for library "${lib.name}" ` +
-        `(${walkFailed ? 'scan error' : `0 files walked, ${existingCount} rows in DB`})`
-      );
+      const reason = walkFailed
+        ? 'scan error'
+        : libWalkErrors > 0
+          ? `${libWalkErrors} unreadable dir(s)`
+          : `0 files walked, ${existingCount} rows in DB`;
+      console.warn(`[reel] Skipping stale-delete for library "${lib.name}" (${reason})`);
       continue;
     }
 
@@ -247,6 +300,10 @@ export async function scanLibraries(config, db) {
     console.warn(`[reel] Skipped ${counters.brokenSymlinks} broken symlink(s) during scan`);
   }
 
+  if (counters.walkErrors > 0) {
+    console.warn(`[reel] Encountered ${counters.walkErrors} unreadable director(ies) during scan`);
+  }
+
   if (tagReadsSkipped > 0) {
     console.log(`[reel] Skipped ${tagReadsSkipped} tag read(s) for existing files`);
   }
@@ -256,7 +313,7 @@ export async function scanLibraries(config, db) {
 
   console.log(`[reel] Scan complete: ${totalUpserts} upserted, ${totalDeletes} deleted` +
     (skippedLibraries.length ? `, stale-delete skipped for: ${skippedLibraries.join(', ')}` : ''));
-  return { scanId, totalUpserts, totalDeletes, skippedLibraries, brokenSymlinks: counters.brokenSymlinks };
+  return { scanId, totalUpserts, totalDeletes, skippedLibraries, brokenSymlinks: counters.brokenSymlinks, walkErrors: counters.walkErrors };
 }
 
 /**

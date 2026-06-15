@@ -31,7 +31,7 @@ export function loadConfig() {
 
   const config = {
     host: process.env.REEL_HOST ?? file.host ?? '0.0.0.0',
-    port: Number(process.env.REEL_PORT ?? file.port ?? 32410),
+    port: Number(process.env.REEL_PORT ?? file.port ?? 32411),
     dbPath: process.env.REEL_DB_PATH ?? file.dbPath,
     libraries: file.libraries,
     allowedExtensions: file.allowedExtensions ?? DEFAULT_EXTENSIONS,

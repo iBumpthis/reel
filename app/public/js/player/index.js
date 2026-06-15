@@ -3,7 +3,7 @@
  * Loads media, initializes modules, handles global keyboard shortcuts.
  */
 import * as api from '../shared/api.js';
-import { toast } from '../shared/utils.js';
+import { toast, fmtTime } from '../shared/utils.js';
 import { initControls, cleanupControls } from './controls.js';
 import { cleanupVisualizer } from './visualizer.js';
 import { initModes, setMode, cycleVizStyle, cycleTheme } from './modes.js';
@@ -63,7 +63,7 @@ async function load() {
     els.playerTitle.textContent = media.artist
       ? `${media.artist} — ${display}`
       : display;
-    const parts = [media.year, media.libraryName, media.ext.toUpperCase()].filter(Boolean);
+    const parts = [media.year, media.libraryName, (media.ext || '').toUpperCase()].filter(Boolean);
     els.playerSub.textContent = parts.join(' · ');
 
     // Set document title
@@ -72,21 +72,9 @@ async function load() {
     // Set source
     els.player.src = media.streamUrl;
 
-    // Codec error detection
-    els.player.addEventListener('error', () => {
-      const err = els.player.error;
-      if (!err) return;
-      const messages = {
-        1: 'Playback aborted',
-        2: 'Network error — file may be inaccessible',
-        3: 'Decode error — codec may not be supported by this browser',
-        4: 'Format not supported — browser cannot play this file type',
-      };
-      const msg = messages[err.code] || `Playback error (code ${err.code})`;
-      const detail = err.message ? `${msg}: ${err.message}` : msg;
-      toast(detail, 'error');
-      console.error('[reel] Media error:', err.code, err.message);
-    });
+    // Media error handling — decode errors get mid-stream recovery
+    // (see handleMediaError below). Other errors surface and stop.
+    els.player.addEventListener('error', handleMediaError);
 
     // Description
     syncDescription(media.description);
@@ -107,6 +95,108 @@ async function load() {
     els.playerTitle.textContent = 'Not found';
     console.error('[reel] Load failed:', err);
   }
+}
+
+// ============================================================
+// Media error handling + mid-stream decode recovery
+//
+// MEDIA_ERR_DECODE (code 3) covers two very different failures:
+//   - Codec incompatibility: the browser can't decode the format at all.
+//     Fires almost immediately (within the first couple seconds). Seeking
+//     past won't help — the whole stream is undecodable. Surface and stop.
+//   - Mid-stream corruption: a bad segment baked into the source (common
+//     from some yt-dlp backup captures). Fires during active playback.
+//     Often recoverable by reloading and seeking a few seconds past the
+//     bad spot.
+// We split on a time threshold: an error before DECODE_CODEC_THRESHOLD is
+// treated as a codec problem; at or after it, as recoverable corruption.
+//
+// The MediaElementAudioSourceNode (if the visualizer is active) stays bound
+// to the <video> element across src reassignment, so reloading does NOT
+// break the audio graph — no need to rebuild it.
+// ============================================================
+const DECODE_RETRY_CAP = 5;        // max recovery attempts per page load
+const DECODE_RECOVERY_SKIP = 3;    // seconds to seek past the bad segment
+const DECODE_COOLDOWN_MS = 1000;   // min gap between recovery attempts
+const DECODE_CODEC_THRESHOLD = 2;  // errors before this point = codec, not corruption
+
+let decodeRetries = 0;
+let lastRecoveryAt = 0;
+
+function handleMediaError() {
+  const err = els.player.error;
+  if (!err) return;
+
+  // Non-decode errors: surface and stop (no recovery path applies).
+  if (err.code !== 3 /* MEDIA_ERR_DECODE */) {
+    const messages = {
+      1: 'Playback aborted',
+      2: 'Network error — file may be inaccessible',
+      4: 'Format not supported — browser cannot play this file type',
+    };
+    const msg = messages[err.code] || `Playback error (code ${err.code})`;
+    toast(err.message ? `${msg}: ${err.message}` : msg, 'error');
+    console.error('[reel] Media error:', err.code, err.message);
+    return;
+  }
+
+  const pos = els.player.currentTime || 0;
+
+  // Early decode error → codec the browser can't handle. Seeking won't fix it.
+  if (pos < DECODE_CODEC_THRESHOLD) {
+    toast('Decode error — codec may not be supported by this browser', 'error');
+    console.error(`[reel] Decode error (codec incompatibility) at ${pos.toFixed(2)}s`);
+    return;
+  }
+
+  // Debounce rapid-fire errors so an in-flight recovery can settle before
+  // we count another attempt against the cap.
+  const now = performance.now();
+  if (now - lastRecoveryAt < DECODE_COOLDOWN_MS) {
+    console.warn('[reel] Decode error within cooldown window, ignoring');
+    return;
+  }
+  lastRecoveryAt = now;
+
+  if (decodeRetries >= DECODE_RETRY_CAP) {
+    toast('Too many decode errors — file may be corrupt', 'error');
+    console.error(`[reel] Decode recovery exhausted after ${decodeRetries} attempt(s)`);
+    return;
+  }
+
+  decodeRetries++;
+  const resumePos = pos + DECODE_RECOVERY_SKIP;
+  console.warn(
+    `[reel] Mid-stream decode error at ${fmtTime(pos)} — ` +
+    `recovery attempt ${decodeRetries}/${DECODE_RETRY_CAP}, seeking to ${fmtTime(resumePos)}`
+  );
+  recoverFromDecodeError(resumePos, pos);
+}
+
+function recoverFromDecodeError(resumePos, errorPos) {
+  const wasPlaying = !els.player.paused;
+  const duration = els.player.duration;
+
+  // Corruption near EOF — skip target past the end. Don't loop on it.
+  if (Number.isFinite(duration) && resumePos >= duration) {
+    toast('Reached end of file after decode error', 'error');
+    console.warn(`[reel] Skip target ${fmtTime(resumePos)} past duration, stopping recovery`);
+    return;
+  }
+
+  // Reload the source, then seek past the bad segment once metadata is back.
+  els.player.src = state.media.streamUrl;
+  els.player.load();
+
+  els.player.addEventListener('loadedmetadata', () => {
+    try {
+      els.player.currentTime = resumePos;
+    } catch (e) {
+      console.error('[reel] Seek after recovery failed:', e);
+    }
+    if (wasPlaying) els.player.play().catch(() => {});
+    toast(`Skipped bad segment at ${fmtTime(errorPos)}`, 'error');
+  }, { once: true });
 }
 
 // ============================================================

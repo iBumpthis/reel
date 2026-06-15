@@ -5,7 +5,7 @@ services:
       context: ..
       dockerfile: deploy/Dockerfile
     ports:
-      - "32410:32410"
+      - "32411:32411"
     volumes:
       # Config file (required)
       - ./config.json:/app/config.json:ro
@@ -17,7 +17,7 @@ services:
     environment:
       - REEL_DB_PATH=/data/db/reel.sqlite
       - REEL_HOST=0.0.0.0
-      - REEL_PORT=32410
+      - REEL_PORT=32411
     restart: unless-stopped
 
 volumes:

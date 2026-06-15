@@ -55,7 +55,7 @@ async function loadBrowse() {
 
       const title = item.title || item.filename;
       const display = item.artist ? `${item.artist} — ${title}` : title;
-      const parts = [item.year, item.libraryName, item.ext.toUpperCase()].filter(Boolean);
+      const parts = [item.year, item.libraryName, (item.ext || '').toUpperCase()].filter(Boolean);
 
       div.innerHTML = `
         <div class="browse-item-title">${escHtml(display)}</div>
