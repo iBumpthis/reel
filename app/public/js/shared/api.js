@@ -76,7 +76,10 @@ export function patchMarker(mediaId, markerId, body) {
 
 /** GET /api/media/:id/markers/export — text format */
 export function exportMarkers(id) {
-  return fetch(`/api/media/${encodeURIComponent(id)}/markers/export`).then(r => r.text());
+  return fetch(`/api/media/${encodeURIComponent(id)}/markers/export`).then(r => {
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.text();
+  });
 }
 
 /** GET /api/tags → { tags: [{ id, name, count }] } */

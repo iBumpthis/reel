@@ -9,7 +9,7 @@ ExecStart=/usr/bin/node server.js
 
 # Config via environment variables (override config.json values)
 Environment=REEL_HOST=0.0.0.0
-Environment=REEL_PORT=32410
+Environment=REEL_PORT=32411
 Environment=REEL_DB_PATH=/opt/reel/data/reel.sqlite
 
 # Run as a dedicated user for isolation

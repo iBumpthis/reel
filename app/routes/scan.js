@@ -19,6 +19,7 @@ export default async function scanRoutes(fastify) {
         totalDeletes: result.totalDeletes,
         skippedLibraries: result.skippedLibraries,
         brokenSymlinks: result.brokenSymlinks,
+        walkErrors: result.walkErrors,
       };
     } catch (err) {
       fastify.log.error(err, 'Scan failed');

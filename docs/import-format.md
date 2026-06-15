@@ -76,12 +76,12 @@ import; only the updatable fields listed above are applied.
 
 ```bash
 # Export
-curl -s http://localhost:32410/api/export?format=csv > library.csv
+curl -s http://localhost:32411/api/export?format=csv > library.csv
 
 # Edit library.csv...
 
 # Re-import
-curl -X POST http://localhost:32410/api/import \
+curl -X POST http://localhost:32411/api/import \
   -H "Content-Type: application/json" \
   -d "{\"csv\": $(jq -Rs . < library.csv)}"
 ```

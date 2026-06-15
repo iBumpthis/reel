@@ -21,7 +21,7 @@ cp ../app/config.example.json config.json
 docker compose up --build -d
 ```
 
-Open `http://your-server:32410` in a browser. Click **Scan** to index your
+Open `http://your-server:32411` in a browser. Click **Scan** to index your
 media libraries.
 
 ## Configuration
@@ -44,7 +44,7 @@ override file values where noted.
     { "name": "Video", "path": "/media/video" }
   ],
   "dbPath": "/data/db/reel.sqlite",
-  "port": 32410,
+  "port": 32411,
   "allowedExtensions": [
     "mp4", "mkv", "webm", "avi", "mov", "m4v",
     "mp3", "m4a", "wav", "flac", "ogg", "opus", "aac", "wma"
@@ -59,7 +59,7 @@ override file values where noted.
 |-------|----------|-------------|-------|
 | `libraries` | Yes | — | Array of `{name, path}`. Names must be unique. Paths are absolute filesystem paths to media directories. Per-library `autoTagDepth` and `autoTagExclude` overrides are optional. |
 | `dbPath` | Yes | `REEL_DB_PATH` | Path to the SQLite database file. Created automatically if it doesn't exist. |
-| `port` | No | `REEL_PORT` | Default `32410`. |
+| `port` | No | `REEL_PORT` | Default `32411`. |
 | `host` | No | `REEL_HOST` | Default `0.0.0.0`. |
 | `allowedExtensions` | No | — | File extensions to index. Default includes all supported formats. |
 | `autoTagDepth` | No | — | Number of directory segments (from library root) to auto-tag on scan. Default `0` (disabled). Can be overridden per-library. |
@@ -236,7 +236,7 @@ services:
       context: ..
       dockerfile: deploy/Dockerfile
     ports:
-      - "32410:32410"
+      - "32411:32411"
     volumes:
       - ./config.json:/app/config.json:ro
       - reel-db:/data/db
@@ -245,7 +245,7 @@ services:
     environment:
       - REEL_DB_PATH=/data/db/reel.sqlite
       - REEL_HOST=0.0.0.0
-      - REEL_PORT=32410
+      - REEL_PORT=32411
     restart: unless-stopped
 
 volumes:
@@ -322,17 +322,22 @@ When a scan runs, files that were previously indexed but no longer exist on
 disk are removed from the database. This deletion is scoped per library and
 includes safety guards:
 
-- If a library's filesystem walk **fails** (mount down, permission error), no
-  rows are deleted from that library. The scan response includes the library
-  name in `skippedLibraries`, and the UI shows an error toast:
+- If a library's filesystem walk **fails** (mount down) or hits **one or more
+  unreadable directories** (permission change, transient I/O, a directory that
+  vanished mid-walk), no rows are deleted from that library. The walk still
+  ingests every directory it *can* read — a single unreadable subfolder no
+  longer aborts the whole library — but stale-delete is suppressed so a partial
+  read can never delete rows that were merely unreadable this pass. The scan
+  response includes the library name in `skippedLibraries` (and a `walkErrors`
+  count), and the UI shows an error toast:
   *"Library unavailable, nothing removed: [name]"*.
 
 - If a library's walk returns **zero files** but the database has existing rows
   for it (mounted-but-empty, e.g. wrong volume path), deletion is also skipped.
 
-This prevents a transient mount failure from cascading into deletion of all
-media rows for a library — which would also destroy all markers and tag
-associations via `ON DELETE CASCADE`.
+This prevents a transient mount or permission failure from cascading into
+deletion of all media rows for a library — which would also destroy all markers
+and tag associations via `ON DELETE CASCADE`.
 
 **Intentional asymmetry:** if you genuinely empty a library's directory, the
 guard blocks cleanup — stale rows persist until at least one media file exists
@@ -343,7 +348,9 @@ Reel never auto-wipes an entire library.
 
 Symlinks are followed. Linked directories are recursed, linked files are
 ingested. Broken symlinks are counted and reported in the scan response
-(`brokenSymlinks`) but don't cause errors.
+(`brokenSymlinks`) but don't cause errors. A symlink pointing back at an
+ancestor directory (a cycle) is detected via `realpath` and skipped rather
+than recursed into, so a self-referential link can't run the walk away.
 
 ### Concurrent Scans
 
