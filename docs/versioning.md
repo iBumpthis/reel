@@ -362,6 +362,37 @@ schema, or dependency changes.
   waveform visualizer mode). A die communicates the button's
   randomize-on-reclick behavior. Icon-only change — no behavior change.
 
+### v1.9.1 — Bars Redesign
+
+First substantive step of the v1.9.X visualizer work. Frontend only — single
+mode rewrite, no new modes, no buttons, no backend/schema/dependency changes.
+Roster unchanged at eight modes.
+
+- **`drawBars` rewritten as a linear end-to-end spectrum.** The prior layout was
+  center-mirrored (bass duplicated at the center, highs to both edges, anchored
+  at the bottom). It is now a single horizontal sweep: bass at the left edge,
+  treble at the right, spanning the full width — Radial's treatment unrolled
+  flat. The main band fills the top 2/3 of the canvas, growing up from a thin
+  baseline; a dimmed (`alpha 0.28`), shortened (`0.5×`) reflection drops into
+  the bottom 1/3 below the baseline. Bars are drawn with rounded outer caps
+  (rounded top on the main bar, rounded bottom on the reflection, square where
+  they meet the baseline).
+- **White-hot peak tips.** Bars whose amplitude crosses `0.82` get a fixed-height
+  white cap, alpha-scaled by how far past threshold they push — the same
+  double-draw technique already used in Matrix Rain and Terminal.
+- **Bin-range cap preserved (and documented in code).** Bars still samples only
+  the lower `0.38` fraction of FFT bins. In lossy MP4 the upper register is
+  dead, so sampling only the populated low band is what fills the frame; without
+  it the real spectrum collapses into the left third. This is a truncation, not
+  interpolation/fill — the in-code comment now states this explicitly so it
+  isn't reinvented or dropped in a future rewrite. (Deliberately absent in
+  Terminal, which shows the true spectrum against fixed Hz labels.)
+- **`roundRect` feature-detected once** with a square-corner fallback, since it
+  is not present on every Reel target's canvas context (notably the Xbox Edge
+  clone).
+- Tuning knobs (`BARS_*` consts: bar count, reflection scale/alpha, peak
+  threshold, corner radius) are pulled to module scope for direct adjustment.
+
 ---
 
 ## Planned

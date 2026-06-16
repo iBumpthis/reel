@@ -260,36 +260,105 @@ function draw() {
 }
 
 // ============================================================
-// Mode: Bars (center-mirrored frequency bars)
+// Mode: Bars (linear end-to-end spectrum with reflection)
 // ============================================================
+// Redesigned v1.9.1. Replaces the prior center-mirrored layout with a
+// single linear spectrum sweep: bass at the left edge, treble at the
+// right, spanning the full width end-to-end (Radial's treatment, but
+// unrolled flat). Main band fills the top 2/3; a dimmed, shortened
+// reflection drops into the bottom 1/3 across a thin baseline. White-hot
+// tips mark peaks at the frame cap (the Matrix/Terminal double-draw).
+//
+// BIN-RANGE CAP (ported from the old Bars / Radial — do NOT drop this):
+// only the lower BARS_BIN_RANGE fraction of FFT bins is sampled. In lossy
+// MP4 the upper register is gone, so those bins are flat near-zero noise;
+// sampling only the populated low band is what fills the frame. Without
+// it the real spectrum collapses into the left third and the rest of the
+// width shows dead bins. This is a truncation, not interpolation —
+// deliberately absent in Terminal, which shows the true (dead-topped)
+// spectrum against fixed Hz labels.
+const BARS_MAX = 96;             // bar-count cap (visual density)
+const BARS_BIN_RANGE = 0.38;     // fraction of FFT bins sampled — see note above
+const BARS_BASELINE = 2 / 3;     // main band height as a fraction of canvas height
+const BARS_REFLECT_SCALE = 0.5;  // reflection length vs main (also fits it in the 1/3 band)
+const BARS_REFLECT_ALPHA = 0.28; // reflection dimming
+const BARS_PEAK_THRESHOLD = 0.82; // amplitude past which the white-hot tip appears
+const BARS_CORNER = 4;            // max rounded-corner radius (px)
+
+// roundRect is not on every target's CanvasRenderingContext2D (some
+// embedded / older browsers — the Xbox Edge clone among Reel's targets).
+// Detect once; fall back to square corners where absent.
+const HAS_ROUND_RECT = typeof CanvasRenderingContext2D !== 'undefined'
+  && typeof CanvasRenderingContext2D.prototype.roundRect === 'function';
+
+// Fill a vertical bar segment, rounding only the outer end (roundTop:
+// true rounds the top, false rounds the bottom) so main + reflection
+// meet flush at the baseline.
+function barSegment(ctx, x, y, bw, bh, r, roundTop) {
+  if (bh <= 0.5) return;
+  if (HAS_ROUND_RECT && r > 0.5) {
+    const rad = Math.min(r, bw / 2, bh);
+    ctx.beginPath();
+    ctx.roundRect(x, y, bw, bh, roundTop ? [rad, rad, 0, 0] : [0, 0, rad, rad]);
+    ctx.fill();
+  } else {
+    ctx.fillRect(x, y, bw, bh);
+  }
+}
+
 function drawBars(ctx, w, h, theme, t) {
   ctx.fillStyle = theme.bg;
   ctx.fillRect(0, 0, w, h);
 
   analyser.getByteFrequencyData(freqData);
 
-  // Cap at 64 bars regardless of fftSize to preserve visual density
-  const rawBins = Math.floor(analyser.frequencyBinCount * 0.38);
-  const usableBins = Math.min(rawBins, 64);
-  const binStep = rawBins / usableBins;
-  const barWidth = w / (usableBins * 2);
-  const centerX = w / 2;
+  const rawBins = Math.max(1, Math.floor(analyser.frequencyBinCount * BARS_BIN_RANGE));
+  const bars = Math.min(rawBins, BARS_MAX);
+  const binStep = rawBins / bars;
 
-  for (let i = 0; i < usableBins; i++) {
+  const baseY = h * BARS_BASELINE;   // baseline / "water line"
+  const maxMainLen = baseY;          // a full-amplitude bar reaches the top
+  const slot = w / bars;
+  const gap = Math.max(1, slot * 0.18);
+  const bw = Math.max(1, slot - gap);
+  const radius = Math.min(bw / 2, BARS_CORNER);
+  const tipLen = Math.max(3, h * 0.012); // fixed-height white peak cap
+
+  for (let i = 0; i < bars; i++) {
     const binIndex = Math.floor(i * binStep);
     const val = freqData[binIndex] / 255;
-    const barHeight = val * h;
+    const barLen = val * maxMainLen;
+    if (barLen < 0.5) continue;
 
-    ctx.fillStyle = theme.color(i, usableBins, t);
+    const x = i * slot + gap / 2;
+    const color = theme.color(i, bars, t);
 
-    const gap = Math.max(1, barWidth * 0.1);
-    const bw = barWidth - gap;
+    // Main bar — grows up from the baseline
+    ctx.globalAlpha = 1.0;
+    ctx.fillStyle = color;
+    barSegment(ctx, x, baseY - barLen, bw, barLen, radius, true);
 
-    // Right side
-    ctx.fillRect(centerX + i * barWidth + gap / 2, h - barHeight, bw, barHeight);
-    // Left side (mirror)
-    ctx.fillRect(centerX - (i + 1) * barWidth + gap / 2, h - barHeight, bw, barHeight);
+    // White-hot tip — double-draw on genuine peaks only, alpha scaled by
+    // how far past threshold the bar pushes (same technique as Matrix).
+    if (val > BARS_PEAK_THRESHOLD) {
+      const cap = Math.min(barLen, tipLen);
+      ctx.fillStyle = '#fff';
+      ctx.globalAlpha = Math.min(0.95, (val - BARS_PEAK_THRESHOLD) / (1 - BARS_PEAK_THRESHOLD));
+      barSegment(ctx, x, baseY - barLen, bw, cap, radius, true);
+    }
+
+    // Reflection — dimmed + shortened, grows down from the baseline
+    ctx.fillStyle = color;
+    ctx.globalAlpha = BARS_REFLECT_ALPHA;
+    barSegment(ctx, x, baseY, bw, barLen * BARS_REFLECT_SCALE, radius, false);
   }
+
+  // Baseline separator — thin, dim, theme-tinted
+  ctx.globalAlpha = 0.25;
+  ctx.fillStyle = theme.color(0, bars, t);
+  ctx.fillRect(0, baseY - 0.5, w, 1);
+
+  ctx.globalAlpha = 1.0;
 }
 
 // ============================================================
