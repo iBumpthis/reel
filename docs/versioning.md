@@ -338,16 +338,45 @@ the removal of three manual-rebuild call sites; no API or UI change.
   isn't built, so the existing zero-dependency parser suites still run
   anywhere via `npm test`.
 
+### v1.9.0 — Player Polish
+
+First release on the v1.9 line, scoped as a small frontend polish patch ahead
+of the visualizer work (which moves to v1.9.1). Frontend only — no backend,
+schema, or dependency changes.
+
+- **Now-playing current pill pinned to a fixed footprint on both axes.** The
+  center pill previously used a `180–320px` width range and a `min-height`
+  floor, so a short marker label rendered a visibly smaller pill than a long
+  one. It is now fixed (`width: 320px`, `height` = the two-line border-box)
+  with short labels centered inside via blank padding rather than shrinking
+  the box. Overflow past two lines stays clamped on the inner `.np-label` with
+  an ellipsis (the full, untruncated label always lives in the markers
+  sidebar). Result: the prev / current / next strip is a constant visual
+  reference frame regardless of which marker is playing, and nothing below it
+  shifts on marker change. `max-width: 100%` added as a safety valve against
+  horizontal overflow on a very narrow column.
+- **Visualizer mode icon changed from an equalizer glyph to a die.** The bars
+  glyph collided with the literal "Bars" mode and misread as one specific
+  visualizer rather than the suite-entry button; it also conflicted with the
+  waveform iconography being reserved for future waveform features (seekbar /
+  waveform visualizer mode). A die communicates the button's
+  randomize-on-reclick behavior. Icon-only change — no behavior change.
+
 ---
 
 ## Planned
 
-### v1.9 — Visualizer Pack
+### v1.9.1 — Visualizer Pack
 
-Additional visualizer modes (traditional render variations). Scope TBD —
-possible directions include waveform circle, frequency mountain, starfield,
-kaleidoscope, and classic scope. May include a toolbar layout adjustment if
-the button row passes comfortable density.
+Additional and punched-up visualizer modes, plus the control-band layout pass
+deferred from v1.9.0. The toolbar reorganization is intentionally held until
+the new mode count is known: a single added mode likely fits the current row,
+whereas several modes — or a sub-mode selector — changes the layout
+materially. Scope, candidate modes, and reusable patterns are tracked in the
+v1.9.1 handoff document. Particles and Nova remain the quality bar. Current
+roster: Bars, Lines, Radial, Spectro, Particles, Nova, Matrix, Terminal (eight
+modes; the row is at comfortable density, so net-new modes drive the layout
+decision).
 
 ### Future — Feature Evaluation
 
