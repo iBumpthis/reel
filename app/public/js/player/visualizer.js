@@ -438,10 +438,18 @@ function drawCircular(ctx, w, h, theme, t) {
     // Angle from top: right side goes clockwise, left side mirrors
     // Use (halfBins - 1) so the last bin lands exactly at 6 o'clock
     const angleOffset = (i / (halfBins - 1)) * Math.PI;
-    const angles = [
-      -Math.PI / 2 + angleOffset,  // right half (clockwise from top)
-      -Math.PI / 2 - angleOffset,  // left half (counter-clockwise from top)
-    ];
+    // At the poles both mirrored angles resolve to the same point
+    // (i === 0 → 12 o'clock, i === halfBins-1 → 6 o'clock). Drawing them
+    // twice is invisible for the opaque outer bars but compounds the
+    // 0.35-alpha inner mirror to ~0.58, leaving two over-bright anchor
+    // spires. Draw the poles once so every inner mirror shares one alpha.
+    const isPole = (i === 0 || i === halfBins - 1);
+    const angles = isPole
+      ? [-Math.PI / 2 + angleOffset]
+      : [
+          -Math.PI / 2 + angleOffset,  // right half (clockwise from top)
+          -Math.PI / 2 - angleOffset,  // left half (counter-clockwise from top)
+        ];
 
     for (const angle of angles) {
       const cos = Math.cos(angle);
