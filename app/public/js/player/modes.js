@@ -44,14 +44,35 @@ function syncMarkersHeight() {
 // ============================================================
 // Viz style + theme setters (sync all buttons)
 // ============================================================
+// Highlight reflects the ACTIVE display mode, not the cached selection:
+// a viz style / theme is only painted active while the visualizer is the
+// running mode. setVizStyle/setTheme still update cached state when called
+// from another mode (e.g. clicking a style button from video, or keyboard
+// cycling) — the highlight is then applied on mode entry by setMode.
 function setVizStyle(style) {
   state.vizStyle = style;
-  vizStyleBtns.forEach(b => b.classList.toggle('active', b.dataset.style === style));
+  if (state.currentMode === 'visualizer') {
+    vizStyleBtns.forEach(b => b.classList.toggle('active', b.dataset.style === style));
+  }
 }
 
 function setTheme(theme) {
   state.currentTheme = theme;
-  themeBtns.forEach(b => b.classList.toggle('active', b.dataset.theme === theme));
+  if (state.currentMode === 'visualizer') {
+    themeBtns.forEach(b => b.classList.toggle('active', b.dataset.theme === theme));
+  }
+}
+
+// Paint / clear the viz + theme highlights to match the cached selection.
+// Called by setMode: applied on entering visualizer, cleared on leaving.
+function applyVizHighlights() {
+  vizStyleBtns.forEach(b => b.classList.toggle('active', b.dataset.style === state.vizStyle));
+  themeBtns.forEach(b => b.classList.toggle('active', b.dataset.theme === state.currentTheme));
+}
+
+function clearVizHighlights() {
+  vizStyleBtns.forEach(b => b.classList.remove('active'));
+  themeBtns.forEach(b => b.classList.remove('active'));
 }
 
 // ============================================================
@@ -95,6 +116,7 @@ export function setMode(mode) {
 
   if (mode === 'video') {
     stopViz();
+    clearVizHighlights();
     els.playbackFrame.classList.remove('mode-audio', 'mode-visualizer');
     els.playbackFrame.classList.add('mode-video');
 
@@ -104,6 +126,7 @@ export function setMode(mode) {
 
   } else if (mode === 'audio') {
     stopViz();
+    clearVizHighlights();
     els.playbackFrame.classList.remove('mode-video', 'mode-visualizer');
     els.playbackFrame.classList.add('mode-audio');
 
@@ -119,6 +142,7 @@ export function setMode(mode) {
     resumeAudioContext();
     els.playbackFrame.classList.remove('mode-video', 'mode-audio');
     els.playbackFrame.classList.add('mode-visualizer');
+    applyVizHighlights();
     startViz();
   }
 
@@ -139,9 +163,9 @@ export function initModes(_state, _els, defaultMode) {
 
   initVisualizer(state, els);
 
-  // Set initial active states from JS (covers both toolbar + FS buttons)
-  vizStyleBtns.forEach(b => b.classList.toggle('active', b.dataset.style === state.vizStyle));
-  themeBtns.forEach(b => b.classList.toggle('active', b.dataset.theme === state.currentTheme));
+  // Initial highlight state is driven by setMode(defaultMode) below — on a
+  // video/audio default nothing is painted; the cached viz style + theme
+  // only light up once the visualizer is actually the active mode.
 
   // Mode buttons — visualizer button doubles as randomizer when already active
   modeBtns.forEach(btn => {
