@@ -32,9 +32,6 @@ export default async function importExportRoutes(fastify) {
           updated_at = datetime('now')
       WHERE id = @id
     `);
-    const rebuildFts = db.prepare(
-      `INSERT INTO media_fts(media_fts) VALUES('rebuild')`
-    );
     const findTag = db.prepare('SELECT id FROM tags WHERE normalized = ?');
     const insertTag = db.prepare('INSERT INTO tags (name, normalized) VALUES (@name, @normalized)');
     const clearTags = db.prepare('DELETE FROM media_tags WHERE media_id = ?');
@@ -92,8 +89,9 @@ export default async function importExportRoutes(fastify) {
         }
       }
 
-      // Rebuild FTS once after all updates
-      if (matched > 0) rebuildFts.run();
+      // FTS sync is handled per-row by the media_fts_au trigger (migration
+      // 003): each updateMeta UPDATE that changes an indexed column resyncs
+      // just that row, inside this same transaction. No full rebuild.
     });
 
     tx();

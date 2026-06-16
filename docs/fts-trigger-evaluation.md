@@ -1,8 +1,9 @@
 # FTS5 Trigger-Sync Evaluation
 
-**Status:** Evaluation / proposal — NOT yet implemented as of v1.8.0.
-**Recommended target:** v1.8.1 (its own focused change), or fold into 2.0 groundwork.
-**Date:** June 2026
+**Status:** IMPLEMENTED in v1.8.1 (migration 003 + removal of the three manual
+`rebuild` call sites + `app/test/fts-triggers.test.js`). This document is
+retained as the design rationale and validation record.
+**Date:** June 2026 (evaluation) / implemented v1.8.1
 
 ---
 
