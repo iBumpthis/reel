@@ -20,6 +20,7 @@ export const state = {
   currentMode: 'video',
   currentTheme: 'rgb',
   vizStyle: 'bars',
+  trails: false,
   fileExt: '',
 };
 
@@ -386,6 +387,16 @@ document.addEventListener('keydown', (e) => {
     case 'T':
       // Cycle color theme
       cycleTheme(e.shiftKey ? -1 : 1);
+      break;
+    case 'g':
+    case 'G':
+      // Toggle Trails modifier (per-mode persistence). Only meaningful in
+      // visualizer mode. Permanent control is the Track B modifiers button —
+      // this shortcut toggles the same state.trails flag.
+      if (state.currentMode === 'visualizer') {
+        state.trails = !state.trails;
+        toast(`Trails ${state.trails ? 'on' : 'off'}`);
+      }
       break;
     case 'Escape':
       // Close any open overlay
