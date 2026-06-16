@@ -384,20 +384,26 @@
   opacity: 0.55;
 }
 
-/* Current pill — centered, constant two-line height regardless of
-   label length. The prominent "zoomed" presentation is the designed
-   state, not an emergent effect of text wrapping: min-height is the
-   exact border-box height of two wrapped lines (2 × 1.35em line-height
-   + 10px padding + 2px border), so 1-line and 2-line labels render at
-   identical height and nothing below the strip ever shifts. */
+/* Current pill — fixed footprint on BOTH axes (the "large" preset),
+   centered regardless of label length. The prominent "zoomed"
+   presentation is the designed state, not an emergent effect of text
+   wrapping: width is pinned to 320px and height to the border-box of
+   two wrapped lines (2 × 1.35em line-height + 10px padding + 2px
+   border), so a 1-line label, a 2-line label, and the idle/prepared
+   state all render at identical size. Short labels center inside the
+   box with blank padding rather than shrinking it, so nothing below
+   the strip shifts and the prev/next pills keep a constant reference
+   frame as the track advances. Overflow past two lines is clamped on
+   the inner .np-label (below). max-width:100% is a safety valve so the
+   fixed width can't force horizontal overflow on a very narrow column. */
 .np-pill.np-current {
   background: var(--accent-muted);
   border-color: var(--accent);
   color: var(--accent);
   font-weight: 600;
-  min-width: 180px;
-  max-width: 320px;
-  min-height: calc(2.7em + 12px);
+  width: 320px;
+  max-width: 100%;
+  height: calc(2.7em + 12px);
   white-space: normal;
   display: flex;
   align-items: center;
