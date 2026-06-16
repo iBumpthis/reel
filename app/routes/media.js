@@ -26,10 +26,9 @@ export default async function mediaRoutes(fastify) {
     ORDER BY t.name ASC
   `);
 
-  // FTS rebuild after metadata changes (content-synced table requires rebuild)
-  const rebuildFts = db.prepare(
-    `INSERT INTO media_fts(media_fts) VALUES('rebuild')`
-  );
+  // FTS sync is handled by the media_fts_au trigger (migration 003): the
+  // UPDATE below fires it automatically, and only when an FTS-indexed column
+  // actually changes. No manual rebuild.
 
   function buildResponse(row) {
     const parsed = parseFilename(row.filename);
@@ -123,12 +122,9 @@ export default async function mediaRoutes(fastify) {
 
     fields.push("updated_at = datetime('now')");
 
-    const updateTx = db.transaction(() => {
-      db.prepare(`UPDATE media SET ${fields.join(', ')} WHERE id = @id`).run(params);
-      rebuildFts.run();
-    });
-
-    updateTx();
+    // Single statement; the media_fts_au trigger keeps the FTS index in sync
+    // atomically within the statement (no explicit transaction needed).
+    db.prepare(`UPDATE media SET ${fields.join(', ')} WHERE id = @id`).run(params);
 
     // Return fresh record
     const updated = getMedia.get(id);

@@ -308,8 +308,10 @@ export async function scanLibraries(config, db) {
     console.log(`[reel] Skipped ${tagReadsSkipped} tag read(s) for existing files`);
   }
 
-  // Rebuild FTS index
-  rebuildFts(db);
+  // FTS index stays in sync via the media_fts_ai/ad/au triggers (migration
+  // 003). New files fire AFTER INSERT; stale deletes fire AFTER DELETE; the
+  // WHEN-gated AFTER UPDATE means a no-op re-scan (only size/mtime/scan
+  // re-set, filename unchanged) does no FTS work. No full rebuild needed.
 
   console.log(`[reel] Scan complete: ${totalUpserts} upserted, ${totalDeletes} deleted` +
     (skippedLibraries.length ? `, stale-delete skipped for: ${skippedLibraries.join(', ')}` : ''));
@@ -327,14 +329,4 @@ function applyTag(tagName, mediaId, findTag, insertTag, linkTag) {
     tagRow = { id: tagResult.lastInsertRowid };
   }
   linkTag.run({ media_id: mediaId, tag_id: tagRow.id });
-}
-
-/**
- * Rebuild the FTS5 index from the media table.
- * Uses the rebuild command which is safe for content-sync'd tables.
- */
-function rebuildFts(db) {
-  // For content-synced FTS5 tables, use the 'rebuild' command.
-  // This re-reads all content from the source table.
-  db.exec(`INSERT INTO media_fts(media_fts) VALUES('rebuild')`);
 }

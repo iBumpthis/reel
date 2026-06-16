@@ -307,6 +307,37 @@ problems it surfaced. No new visualizer modes (those move to v1.9).
   blocker solved with a `WHEN`-gated UPDATE trigger). Evaluation only — see
   `docs/fts-trigger-evaluation.md`. Proposed for v1.8.1.
 
+### v1.8.1 — FTS5 trigger-based sync
+
+Implements the FTS5 trigger sync evaluated in v1.8.0. Schema-only change plus
+the removal of three manual-rebuild call sites; no API or UI change.
+
+- **Migration 003 — FTS triggers.** Three triggers on `media` now keep the
+  `media_fts` external-content index current incrementally: `AFTER INSERT`
+  and `AFTER DELETE` mirror row changes, and a `WHEN`-gated `AFTER UPDATE`
+  resyncs a row only when an FTS-indexed column (`filename`, `title`,
+  `artist`, `album`, `description`) actually changes. A one-time `rebuild`
+  baseline runs in the migration so the index is known-good before the
+  triggers take over. Purely additive and reversible (`DROP TRIGGER`); the
+  blast radius if wrong is stale search results, not data loss (FTS is
+  derived). The migration leaves migration 002's historical rebuild intact.
+- **Removed full-rebuild call sites.** `services/scanner.js` (per scan),
+  `routes/media.js` (every metadata PATCH), and `routes/import-export.js`
+  (per import) no longer run `INSERT INTO media_fts(media_fts)
+  VALUES('rebuild')`. The triggers do the equivalent work targeted to the
+  changed rows: O(1) per changed row on the edit/import paths instead of an
+  O(n) full reindex, and zero FTS work on a no-op re-scan (the scanner's
+  `ON CONFLICT` re-sets `filename` to the same value, so the `WHEN`-gate is
+  false). Empirically ~1200× faster on a single edit at 50K rows.
+- **DB-level trigger tests.** `app/test/fts-triggers.test.js` exercises the
+  real migration SQL (001+002+003) against the actual SQLite engine via
+  `better-sqlite3`: insert/update/delete indexing, the `WHEN`-gate writing
+  zero FTS rows on non-indexed and no-op-rescan updates, `integrity-check`,
+  and a no-drift check that the trigger-synced index equals a full rebuild.
+  The suite skips cleanly (rather than failing) where the native module
+  isn't built, so the existing zero-dependency parser suites still run
+  anywhere via `npm test`.
+
 ---
 
 ## Planned
