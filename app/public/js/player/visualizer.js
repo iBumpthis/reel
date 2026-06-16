@@ -19,7 +19,7 @@ let waveData = null;
 
 // Ordered lists for keyboard cycling
 export const VIZ_STYLES = ['bars', 'lines', 'circular', 'spectrogram', 'particles', 'nova', 'matrix', 'terminal'];
-export const THEME_NAMES = ['muted', 'colorful', 'rgb', 'neon', 'fire', 'matrix', 'ocean'];
+export const THEME_NAMES = ['muted', 'colorful', 'rgb', 'neon', 'fire', 'matrix', 'ocean', 'alpine'];
 
 // ============================================================
 // Themes — each provides bg, color(i, count, t), and
@@ -114,6 +114,32 @@ const VIZ_THEMES = {
     amplitudeColor: (v) => {
       const pct = v / 255;
       return `rgb(${Math.round(pct * 15)}, ${Math.round(20 + pct * 140)}, ${Math.round(40 + pct * 180)})`;
+    },
+  },
+  // Alpine — glacier blue (bass) -> desaturated sage/conifer (mids) -> snow
+  // white with a blue cast (treble). Deliberately icy and low-saturation:
+  // real red lets it grey toward white (Ocean stays saturated cyan and never
+  // whitens), and the sage mid-band carries substantial red + blue so it
+  // cannot read as Matrix's phosphor green (r=0, b~=0). greenBump peaks the
+  // green channel mid-spectrum to give the conifer band; blue dips where
+  // green leads, then all channels converge to icy white at the top.
+  alpine: {
+    bg: 'rgba(0, 0, 0, 0.92)',
+    color: (i, count, t) => {
+      const pct = i / count;
+      const shimmer = Math.sin(t * 0.25) * 6;
+      const greenBump = Math.sin(pct * Math.PI) * 45;
+      const r = Math.round(70 + pct * 150);
+      const g = Math.round(120 + pct * 105 + greenBump + shimmer);
+      const b = Math.round(155 + pct * 90 - greenBump * 0.6);
+      return `rgb(${Math.min(255, r)}, ${Math.min(255, g)}, ${Math.min(255, b)})`;
+    },
+    amplitudeColor: (v) => {
+      const pct = v / 255;
+      const r = Math.round(30 + pct * 200);
+      const g = Math.round(50 + pct * 195);
+      const b = Math.round(75 + pct * 175);
+      return `rgb(${r}, ${g}, ${b})`;
     },
   },
 };
@@ -223,6 +249,51 @@ function ensureMatrix(w, h) {
 // ============================================================
 // Draw loop
 // ============================================================
+// ============================================================
+// Trails modifier (v1.9.3)
+// ------------------------------------------------------------
+// Per-mode-aware persistence. There is NO global canvas clear — each mode
+// clears itself as its first draw op — so Trails is NOT an engine-level
+// clear-swap. It lowers the *per-mode* clear-alpha so frames persist:
+//
+//   Full-clear modes (Bars, Radial): normal clear is theme.bg, a near-opaque
+//   rgba(0,0,0,0.92-0.95) that varies per theme. Trails-on can't just scale
+//   that; it swaps it for a low-alpha black so the spectrum/spiral streaks
+//   instead of wiping each frame. This is the net-new persistence.
+//
+//   Trail modes (Lines, Particles, Nova, Matrix): already partial-clear.
+//   Trails-on deepens the existing trail (lower alpha => longer streaks).
+//   NOTE: Particles and Nova are already trail-heavy; their trails-on values
+//   are the most likely tuning targets if they over-smear.
+//
+//   Spectro (pixel-scroll) and Terminal (scrolling text) are out of scope.
+//
+// Every value below is a tuning knob — manual fine-tuning post-delivery is
+// expected and normal.
+const TRAIL_ALPHA = {
+  bars:      0.10,   // full-clear -> vertical streaks
+  circular:  0.10,   // full-clear -> spiral ghosting
+  lines:     0.06,   // normal 0.11 -> deeper
+  particles: 0.06,   // normal 0.12 -> deeper   (watch: already trail-heavy)
+  nova:      0.045,  // normal 0.08 -> deeper   (watch: heaviest smear risk)
+  matrix:    0.03,   // normal 0.06 -> deeper
+};
+
+// Clear for the two full-clear modes (Bars, Radial).
+// Trails off: the theme's near-opaque bg. Trails on: a low-alpha black overlay.
+function clearFull(ctx, w, h, theme, mode) {
+  ctx.fillStyle = state.trails ? `rgba(0, 0, 0, ${TRAIL_ALPHA[mode]})` : theme.bg;
+  ctx.fillRect(0, 0, w, h);
+}
+
+// Clear for the partial-clear trail modes (Lines, Particles, Nova, Matrix).
+// Trails off: the mode's own normal trail alpha. Trails on: the deeper value.
+function clearTrail(ctx, w, h, normalAlpha, mode) {
+  const a = state.trails ? TRAIL_ALPHA[mode] : normalAlpha;
+  ctx.fillStyle = `rgba(0, 0, 0, ${a})`;
+  ctx.fillRect(0, 0, w, h);
+}
+
 function draw() {
   vizAnimFrame = requestAnimationFrame(draw);
 
@@ -307,8 +378,7 @@ function barSegment(ctx, x, y, bw, bh, r, roundTop) {
 }
 
 function drawBars(ctx, w, h, theme, t) {
-  ctx.fillStyle = theme.bg;
-  ctx.fillRect(0, 0, w, h);
+  clearFull(ctx, w, h, theme, 'bars');
 
   analyser.getByteFrequencyData(freqData);
 
@@ -366,8 +436,7 @@ function drawBars(ctx, w, h, theme, t) {
 // ============================================================
 function drawLines(ctx, w, h, theme, t) {
   // Persistence decay — partial clear creates trailing effect
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.11)';
-  ctx.fillRect(0, 0, w, h);
+  clearTrail(ctx, w, h, 0.11, 'lines');
 
   analyser.getByteTimeDomainData(waveData);
 
@@ -412,8 +481,7 @@ function drawLines(ctx, w, h, theme, t) {
 // Mode: Circular (radial frequency bars, mirrored for symmetry)
 // ============================================================
 function drawCircular(ctx, w, h, theme, t) {
-  ctx.fillStyle = theme.bg;
-  ctx.fillRect(0, 0, w, h);
+  clearFull(ctx, w, h, theme, 'circular');
 
   analyser.getByteFrequencyData(freqData);
 
@@ -531,8 +599,7 @@ function drawSpectrogram(ctx, w, h, theme, t) {
 // ============================================================
 function drawParticles(ctx, w, h, theme, t) {
   // Persistence trail
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.12)';
-  ctx.fillRect(0, 0, w, h);
+  clearTrail(ctx, w, h, 0.12, 'particles');
 
   ensureParticles(w, h);
   analyser.getByteFrequencyData(freqData);
@@ -619,8 +686,7 @@ function ensureNova(w, h) {
 
 function drawNova(ctx, w, h, theme, t) {
   // Slower trail decay — orbs leave longer streaks
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.08)';
-  ctx.fillRect(0, 0, w, h);
+  clearTrail(ctx, w, h, 0.08, 'nova');
 
   ensureNova(w, h);
   analyser.getByteFrequencyData(freqData);
@@ -704,8 +770,7 @@ function drawNova(ctx, w, h, theme, t) {
 // ============================================================
 function drawMatrix(ctx, w, h, theme, t) {
   // Slow trail decay — characters leave persistent tails
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.06)';
-  ctx.fillRect(0, 0, w, h);
+  clearTrail(ctx, w, h, 0.06, 'matrix');
 
   ensureMatrix(w, h);
   analyser.getByteFrequencyData(freqData);
