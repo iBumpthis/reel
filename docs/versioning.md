@@ -366,7 +366,7 @@ schema, or dependency changes.
 
 ## Planned
 
-### v1.9.1 — Visualizer Pack
+### v1.9.X — Visualizer Pack
 
 Additional and punched-up visualizer modes, plus the control-band layout pass
 deferred from v1.9.0. The toolbar reorganization is intentionally held until
