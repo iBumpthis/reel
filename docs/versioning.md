@@ -393,6 +393,32 @@ Roster unchanged at eight modes.
 - Tuning knobs (`BARS_*` consts: bar count, reflection scale/alpha, peak
   threshold, corner radius) are pulled to module scope for direct adjustment.
 
+### v1.9.2 — Visualizer Selection UX
+
+Two isolated frontend fixes surfaced while testing the v1.9.1 Bars redesign.
+No new modes, no backend/schema/dependency changes. Deliberately kept separate
+from the feedback-engine work (the next patch) so a ready quick-win isn't held
+behind the larger infra build.
+
+- **Viz style + theme highlights now track the active mode, not the cached
+  selection.** On a fresh player load (video mode) a visualizer style and a
+  theme were both painted active even though only the video was playing — the
+  highlight reflected the cached default rather than what was on screen.
+  `initModes` no longer paints active state unconditionally; `setMode` clears
+  the viz/theme highlights on the video/audio branches and re-applies them on
+  entering the visualizer. `setVizStyle`/`setTheme` still update cached state
+  from any mode but only paint while the visualizer is active, so the cached
+  selection lights up exactly when it starts playing (including via the die's
+  load-last-selection click). No layout shift: viz buttons keep a constant 1px
+  border and theme dots use a layout-neutral `box-shadow` ring, so adding or
+  removing the highlight never reflows the row.
+- **Radial pole bars no longer double-draw.** At 12 o'clock (`i === 0`) and
+  6 o'clock (`i === halfBins - 1`) both mirrored angles resolve to the same
+  point, so those two bars were drawn twice. Invisible for the opaque outer
+  bars, but it compounded the `0.35`-alpha inner mirror to ~`0.58`, leaving two
+  over-bright anchor spires. The poles are now drawn once so every inner mirror
+  shares one alpha.
+
 ---
 
 ## Planned
