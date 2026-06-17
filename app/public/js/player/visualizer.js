@@ -924,6 +924,12 @@ const TERM_FREQ_LABELS = ['20', '32', '50', '80', '125', '200', '315', '500', '8
 const TERM_FREQ_HZ = [20, 32, 50, 80, 125, 200, 315, 500, 800, 1200, 2000, 3200, 5000, 8000, 12000, 16000];
 const TERM_LINE_INTERVAL = 125; // ms base between lines
 const TERM_MAX_LINES = 200;
+// Resume resync: if the gap since the last spawned line exceeds this, the
+// renderer was suspended (pause gate, or a backgrounded tab throttling RAF),
+// not merely a slow frame. Skip the catch-up replay instead of bursting one
+// line per missed interval. Well above any normal frame gap (~16-100ms),
+// well below a real pause.
+const TERM_RESYNC_MS = 500;
 const TERM_SINGLE_EGG_CHANCE = 1 / 150;
 const TERM_MULTI_EGG_CHANCE = 1 / 400;
 const TERM_EGG_COOLDOWN = 12; // minimum lines between eggs
@@ -1142,6 +1148,17 @@ function drawTerminal(ctx, w, h, theme, t) {
   // ---- Add new line(s) on tick ----
   if (termLastLineTime === 0) termLastLineTime = now;
 
+  // Resume guard: when rendering was suspended (pause gate / backgrounded
+  // tab), `now` jumps far ahead while termLastLineTime stayed put because no
+  // frames drew. The catch-up while-loop below would otherwise spawn one line
+  // per missed 125ms interval in this single frame — a burst that
+  // fast-forwards through the entire pause (eggs and all). Treat a large gap
+  // as a resume: continue from now so the terminal picks up seamlessly from
+  // the frozen frame.
+  if (now - termLastLineTime > TERM_RESYNC_MS) {
+    termLastLineTime = now;
+  }
+
   while (now - termLastLineTime >= TERM_LINE_INTERVAL) {
     termLastLineTime += TERM_LINE_INTERVAL;
 
@@ -1320,8 +1337,11 @@ const FEEDBACK_PARAMS = {
   //
   // Wormhole: slow decay + steady zoom so a ring born at center survives all
   // the way to the frame edge — that persistence is what reads as an endless
-  // tunnel rather than rings that flash and vanish. ~2s center->edge.
-  wormhole: { decay: 0.975, zoom: 1.022, rot: 0.0010, bassZoom: 0.012 },
+  // tunnel rather than rings that flash and vanish. ~2s center->edge. The rot
+  // gives the walls a slow corkscrew (each ring generation is rotated a touch
+  // relative to the last); kept gentle to avoid dizziness — halve it if the
+  // swirl is too much, zero it for a straight tunnel.
+  wormhole: { decay: 0.975, zoom: 1.022, rot: 0.0040, bassZoom: 0.012 },
   // Cascade: rotation-dominant, gentle zoom. The rotation is what turns each
   // fixed stamp position into a trailing spiral arm; zoom only blooms it
   // outward slowly. A contained, centered mandala (fades before the edge).
@@ -1521,14 +1541,20 @@ function stampCascade(dctx, bw, bh, t, theme, bass) {
 
   // --- Spiral-arm rosette: a crystal shard at each arm position. Each shard
   // is a thin outward diamond; the engine's rotation trails it into a spiral
-  // arm. Shard length/brightness track a per-arm frequency bin. ---
-  const ringR = minDim * 0.085 * (1 + bass * 0.7);   // ring pulses with bass
-  const shardBase = minDim * 0.05;
+  // arm. Shard length/brightness track a per-arm frequency bin, PLUS a global
+  // bass kick so the whole rosette punches outward on hits — without that the
+  // arms hold a near-constant length and the spiral locks into uniform
+  // swooshes. Inner edge stays at ~ringR so the center gap is preserved; only
+  // the outward reach grows on peaks. ---
+  const ringR = minDim * 0.085 * (1 + bass * 1.0);   // ring pulses with bass
+  const shardBase = minDim * 0.055;
   for (let k = 0; k < CASCADE_ARMS; k++) {
     const ang = (k / CASCADE_ARMS) * Math.PI * 2 - Math.PI / 2;
     const bin = Math.floor((k / CASCADE_ARMS) * usable);
     const amp = freqData[bin] / 255;
-    const len = shardBase * (0.4 + amp * 1.6);
+    // Higher amp ceiling than v1 (peaks reach much further) + a shared bass
+    // term so kicks bounce every arm at once.
+    const len = shardBase * (0.3 + amp * 2.6 + bass * 1.6);
     const wd = shardBase * 0.16 * (0.6 + amp);
 
     const ca = Math.cos(ang), sa = Math.sin(ang);
