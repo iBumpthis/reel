@@ -335,7 +335,11 @@ function draw(now) {
   // loop stays alive (cheap no-op RAF) so play resumes rendering instantly
   // with no event wiring. Entering the visualizer while paused shows the
   // last frame (or black if none yet) until playback starts.
-  if (els.player.paused) return;
+  //   EXCEPTION: Terminal renders while paused so it can run its own pause
+  //   story (^C -> drain -> idle blinking prompt). It self-throttles to the
+  //   blink rate once idle, so the exemption costs almost nothing. See the
+  //   Terminal header. Do not fold this back into the gate.
+  if (els.player.paused && state.vizStyle !== 'terminal') return;
 
   // Frame cap (see TARGET_FPS).
   if (typeof now !== 'number') now = performance.now();
@@ -904,10 +908,28 @@ function drawMatrix(ctx, w, h, theme, t) {
 // ============================================================
 // Mode: Terminal (scrolling bash-style frequency display)
 //
-// A bash terminal aesthetic. Lines scroll bottom-to-top. Each
-// line is a prompt + 16 frequency bin labels whose brightness
-// maps to amplitude. An easter egg system injects shell commands,
-// fake errors, and interactive output at random intervals.
+// A bash terminal aesthetic, framed as `tail -f` following an audio log:
+// the first line on every (re)start is the tail command, and the frequency
+// lines stream in below it as if appended to the log. Each freq line is a
+// prompt + 16 frequency bin labels whose brightness maps to amplitude. An
+// easter egg system injects shell commands, fake errors, and interactive
+// output at random intervals. (Per-line prompts are kept deliberately —
+// not strictly authentic for tail output, but the left-edge column is
+// visually load-bearing, reinforces the gag, and the egg output lines that
+// break it up double as OLED protection.)
+//
+// PAUSE BEHAVIOR — Terminal's own little world. Terminal is the ONE mode
+// exempt from the global pause gate (see draw()): when playback pauses it
+// keeps rendering so it can tell a story instead of freezing. On pause it
+// drops a `^C` (the tail follow is interrupted), the buffered output drains
+// up and off the top, and it settles to an idle prompt with a blinking
+// block cursor. On resume it re-runs `tail -f` and the stream returns.
+//   Phases: 'streaming' -> 'draining' -> 'idle' -> (resume) 'streaming'.
+// The idle phase self-throttles to the cursor blink rate (a couple of full
+// redraws per second, not 60) so the exemption costs almost nothing while
+// paused — the full-canvas clear, not the text, is Terminal's per-frame
+// cost, so redrawing only on blink flips keeps idle GPU near the floor.
+// This exemption is intentional; do not "fix" it back into the pause gate.
 //
 // Performance: ~37 visible lines × (1 prompt + 16 labels) = ~629
 // fillText calls/frame. Comparable to Matrix Rain. Easter egg
@@ -919,6 +941,7 @@ function drawMatrix(ctx, w, h, theme, t) {
 // ============================================================
 const TERM_PROMPT = 'visualizer@reel:~$ ';
 const TERM_ROOT_PROMPT = 'root@reel:~# ';
+const TERM_TAIL_CMD = 'tail -f /var/log/reel/audio_output.log';  // stream-start line
 const TERM_FREQ_LABELS = ['20', '32', '50', '80', '125', '200', '315', '500', '800', '1.2k', '2k', '3.2k', '5k', '8k', '12k', '16k'];
 // Target frequencies in Hz for bin mapping
 const TERM_FREQ_HZ = [20, 32, 50, 80, 125, 200, 315, 500, 800, 1200, 2000, 3200, 5000, 8000, 12000, 16000];
@@ -928,11 +951,15 @@ const TERM_MAX_LINES = 200;
 // renderer was suspended (pause gate, or a backgrounded tab throttling RAF),
 // not merely a slow frame. Skip the catch-up replay instead of bursting one
 // line per missed interval. Well above any normal frame gap (~16-100ms),
-// well below a real pause.
+// well below a real pause. (Belt-and-suspenders alongside the pause phase
+// machine, which already reseeds on resume — this still guards mode re-entry
+// and backgrounded tabs.)
 const TERM_RESYNC_MS = 500;
 const TERM_SINGLE_EGG_CHANCE = 1 / 150;
 const TERM_MULTI_EGG_CHANCE = 1 / 400;
 const TERM_EGG_COOLDOWN = 12; // minimum lines between eggs
+const TERM_BLINK_MS = 530;    // cursor blink half-period (classic terminal ~1Hz)
+const TERM_DRAIN_RATE = 0.024; // fraction of canvas height drained per frame (~0.7s @60fps)
 
 let termLines = [];
 let termLastLineTime = 0;
@@ -943,6 +970,11 @@ let termEggCooldown = 0;
 let termEggQueue = [];
 let termBinIndices = null; // cached bin index map
 let termLastSampleRate = 0;
+// Pause phase machine: null (uninitialized) -> 'streaming' -> 'draining' ->
+// 'idle' -> (resume) 'streaming'.
+let termPhase = null;
+let termDrainOffset = 0;     // px the buffer has drained upward (draining phase)
+let termBlinkLastPhase = -1; // last cursor-blink phase rendered (idle throttle)
 
 // ---- Frequency bin mapping ----
 function ensureTermBins() {
@@ -967,6 +999,11 @@ function ensureTerminal(w, h) {
   termLastLineTime = 0;
   termEggCooldown = 0;
   termEggQueue = [];
+  // Re-initialize the phase machine on resize so the next frame re-seeds
+  // (tail -f if playing, idle prompt if paused).
+  termPhase = null;
+  termDrainOffset = 0;
+  termBlinkLastPhase = -1;
 }
 
 // ---- Easter egg definitions ----
@@ -1127,38 +1164,20 @@ function generateGarbage() {
   return s;
 }
 
-// ---- Terminal draw ----
-function drawTerminal(ctx, w, h, theme, t) {
-  // Full clear — no persistence trail for terminal
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.95)';
-  ctx.fillRect(0, 0, w, h);
+// ---- Terminal helpers ----
 
-  ensureTerminal(w, h);
-  ensureTermBins();
-  analyser.getByteFrequencyData(freqData);
+// Begin (or restart) the log stream: clear to a `tail -f` command line and
+// reset spawn timing. Called on first activation, on resize, and on resume.
+function seedStream(now) {
+  termLines = [{ text: TERM_TAIL_CMD, prompt: TERM_PROMPT }];
+  termLastLineTime = now;
+  termEggQueue = [];
+  termEggCooldown = TERM_EGG_COOLDOWN; // hold eggs briefly so the stream establishes first
+  termDrainOffset = 0;
+}
 
-  const now = performance.now();
-  const charH = termCharH;
-  const lineSpacing = Math.floor(charH * 1.3);
-  const maxVisible = Math.ceil(h / lineSpacing) + 2;
-
-  ctx.font = `${charH}px monospace`;
-  ctx.textBaseline = 'top';
-
-  // ---- Add new line(s) on tick ----
-  if (termLastLineTime === 0) termLastLineTime = now;
-
-  // Resume guard: when rendering was suspended (pause gate / backgrounded
-  // tab), `now` jumps far ahead while termLastLineTime stayed put because no
-  // frames drew. The catch-up while-loop below would otherwise spawn one line
-  // per missed 125ms interval in this single frame — a burst that
-  // fast-forwards through the entire pause (eggs and all). Treat a large gap
-  // as a resume: continue from now so the terminal picks up seamlessly from
-  // the frozen frame.
-  if (now - termLastLineTime > TERM_RESYNC_MS) {
-    termLastLineTime = now;
-  }
-
+// Spawn the freq / egg lines due since the last tick (streaming phase only).
+function spawnTermLines(now) {
   while (now - termLastLineTime >= TERM_LINE_INTERVAL) {
     termLastLineTime += TERM_LINE_INTERVAL;
 
@@ -1167,14 +1186,12 @@ function drawTerminal(ctx, w, h, theme, t) {
       termLines.push(termEggQueue.shift());
       if (termEggCooldown > 0) termEggCooldown--;
     } else {
-      // Try easter egg
       let egged = false;
       if (termEggCooldown <= 0) {
         if (Math.random() < TERM_MULTI_EGG_CHANCE) {
           const pool = getTermMultiEggs(state, els);
           const egg = pool[Math.floor(Math.random() * pool.length)];
           const lines = egg();
-          // First line goes now, rest queue
           termLines.push(lines[0]);
           for (let i = 1; i < lines.length; i++) termEggQueue.push(lines[i]);
           termEggCooldown = TERM_EGG_COOLDOWN;
@@ -1207,25 +1224,27 @@ function drawTerminal(ctx, w, h, theme, t) {
       termLines.splice(0, termLines.length - TERM_MAX_LINES);
     }
   }
+}
 
-  // ---- Render visible lines bottom-to-top ----
+// Render the line buffer bottom-anchored, shifted up by yShift px (the drain
+// animation passes the growing offset; streaming passes 0).
+function renderTermLines(ctx, w, h, theme, t, lineSpacing, charH, maxVisible, yShift) {
   const totalLines = termLines.length;
   const startIdx = Math.max(0, totalLines - maxVisible);
   // Prompt uses a fixed neutral grey — readable on all theme backgrounds.
   // Dim frequency labels still use the theme color for visual coherence.
   const dimLabelColor = theme.color(0, 16, t);
 
-  // Measure prompt width once
   ctx.font = `${charH}px monospace`;
+  ctx.textBaseline = 'top';
   const promptWidth = ctx.measureText(TERM_PROMPT).width;
   const labelAreaWidth = w - promptWidth - 10; // 10px right margin
   const labelSlotWidth = labelAreaWidth / 16;
 
   for (let i = startIdx; i < totalLines; i++) {
     const line = termLines[i];
-    const row = i - startIdx;
     // Lines render from bottom: newest at bottom, oldest at top
-    const y = h - (totalLines - i) * lineSpacing;
+    const y = h - (totalLines - i) * lineSpacing - yShift;
 
     if (y < -lineSpacing || y > h + lineSpacing) continue;
 
@@ -1261,7 +1280,7 @@ function drawTerminal(ctx, w, h, theme, t) {
         }
       }
     } else {
-      // Easter egg line
+      // Easter egg / command / output line
       const prompt = line.prompt || '';
       const text = line.text || '';
 
@@ -1279,7 +1298,7 @@ function drawTerminal(ctx, w, h, theme, t) {
           ctx.fillText(text, px, y);
         }
       } else if (line.isOutput) {
-        // Output-only line (no prompt)
+        // Output-only line (no prompt) — e.g. egg output, or the ^C interrupt
         ctx.fillStyle = theme.color(8, 16, t);
         ctx.globalAlpha = 0.75;
         ctx.textAlign = 'left';
@@ -1290,6 +1309,97 @@ function drawTerminal(ctx, w, h, theme, t) {
 
   ctx.globalAlpha = 1.0;
   ctx.textAlign = 'left';
+}
+
+// Draw the idle prompt at the bottom row, with an optional block cursor.
+// (Block cursor chosen over a literal `_`: it reads unambiguously as a
+// terminal cursor — swap the fillRect for fillText('_') if preferred.)
+function drawTermIdlePrompt(ctx, w, h, lineSpacing, charH, cursorOn) {
+  ctx.font = `${charH}px monospace`;
+  ctx.textBaseline = 'top';
+  ctx.textAlign = 'left';
+  const y = h - lineSpacing;
+  ctx.fillStyle = '#8a959e';
+  ctx.globalAlpha = 0.55;
+  ctx.fillText(TERM_PROMPT, 4, y);
+  if (cursorOn) {
+    const cw = ctx.measureText('0').width;
+    const cx = 4 + ctx.measureText(TERM_PROMPT).width + 2;
+    ctx.globalAlpha = 0.7;
+    ctx.fillRect(cx, y, cw, charH);
+  }
+  ctx.globalAlpha = 1.0;
+}
+
+// ---- Terminal draw ----
+function drawTerminal(ctx, w, h, theme, t) {
+  ensureTerminal(w, h);
+  ensureTermBins();
+
+  const now = performance.now();
+  const charH = termCharH;
+  const lineSpacing = Math.floor(charH * 1.3);
+  const maxVisible = Math.ceil(h / lineSpacing) + 2;
+  const paused = els.player.paused;
+  const cursorOn = Math.floor(now / TERM_BLINK_MS) % 2 === 0;
+
+  // ---- Phase transitions (see header: streaming -> draining -> idle) ----
+  if (termPhase === null) {
+    // First activation (mode entry / post-resize): seed the stream if
+    // playing, or sit at an idle prompt if entered while paused.
+    if (paused) {
+      termLines = [];
+      termPhase = 'idle';
+      termBlinkLastPhase = -1;
+    } else {
+      seedStream(now);
+      termPhase = 'streaming';
+    }
+  } else if (paused && termPhase === 'streaming') {
+    // Play -> pause: interrupt the tail follow, begin draining.
+    termLines.push({ text: '^C', isOutput: true });
+    termPhase = 'draining';
+    termDrainOffset = 0;
+  } else if (!paused && (termPhase === 'draining' || termPhase === 'idle')) {
+    // Pause -> play: re-run tail -f and resume streaming.
+    seedStream(now);
+    termPhase = 'streaming';
+  }
+
+  // ---- Idle: self-throttle to the blink rate. Only clear+redraw on a blink
+  // flip; otherwise hold the last frame (the canvas keeps its pixels). This
+  // is what keeps Terminal's pause exemption nearly free. ----
+  if (termPhase === 'idle') {
+    const blinkPhase = cursorOn ? 0 : 1;
+    if (blinkPhase === termBlinkLastPhase) return;
+    termBlinkLastPhase = blinkPhase;
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, w, h);
+    drawTermIdlePrompt(ctx, w, h, lineSpacing, charH, cursorOn);
+    return;
+  }
+
+  // ---- Streaming / draining: full clear + render every frame ----
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.95)';
+  ctx.fillRect(0, 0, w, h);
+
+  if (termPhase === 'streaming') {
+    analyser.getByteFrequencyData(freqData);
+    if (termLastLineTime === 0) termLastLineTime = now;
+    // Resume / backgrounded-tab resync (see TERM_RESYNC_MS).
+    if (now - termLastLineTime > TERM_RESYNC_MS) termLastLineTime = now;
+    spawnTermLines(now);
+    renderTermLines(ctx, w, h, theme, t, lineSpacing, charH, maxVisible, 0);
+  } else {
+    // draining: scroll the buffer up and off; reveal the idle prompt below.
+    termDrainOffset += h * TERM_DRAIN_RATE;
+    renderTermLines(ctx, w, h, theme, t, lineSpacing, charH, maxVisible, termDrainOffset);
+    drawTermIdlePrompt(ctx, w, h, lineSpacing, charH, cursorOn);
+    if (termDrainOffset > h + lineSpacing) {
+      termPhase = 'idle';
+      termBlinkLastPhase = -1;
+    }
+  }
 }
 
 // ============================================================
