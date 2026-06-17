@@ -25,6 +25,17 @@ export const THEME_NAMES = ['muted', 'colorful', 'rgb', 'neon', 'fire', 'matrix'
 // Themes — each provides bg, color(i, count, t), and
 // amplitudeColor(value) for spectrogram mapping (0-255)
 // ============================================================
+// Alpine theme waypoints (bass -> mid -> treble). These are the three anchor
+// colors the alpine ramp interpolates between; tune them directly to reshape
+// it. MID is a genuine third color (a dark, saturated forest/pine green), not
+// a blend stop on the way to white — the ramp lerps BASS->MID across the low
+// half of the spectrum and MID->HIGH across the high half, so the green holds
+// its own identity in the middle before the climb to snow white.
+const ALPINE_BASS = [55, 105, 165]; // glacier blue
+const ALPINE_MID  = [40, 120, 64];  // forest / pine green — distinct waypoint
+const ALPINE_HIGH = [228, 236, 248]; // snow white (faint blue cast)
+const ALPINE_AMP_LOW = [18, 40, 75]; // spectrogram floor: dim glacier (quiet bins)
+
 const VIZ_THEMES = {
   muted: {
     bg: 'rgba(0, 0, 0, 0.92)',
@@ -116,30 +127,37 @@ const VIZ_THEMES = {
       return `rgb(${Math.round(pct * 15)}, ${Math.round(20 + pct * 140)}, ${Math.round(40 + pct * 180)})`;
     },
   },
-  // Alpine — glacier blue (bass) -> desaturated sage/conifer (mids) -> snow
-  // white with a blue cast (treble). Deliberately icy and low-saturation:
-  // real red lets it grey toward white (Ocean stays saturated cyan and never
-  // whitens), and the sage mid-band carries substantial red + blue so it
-  // cannot read as Matrix's phosphor green (r=0, b~=0). greenBump peaks the
-  // green channel mid-spectrum to give the conifer band; blue dips where
-  // green leads, then all channels converge to icy white at the top.
+  // Alpine — glacier blue (bass) -> forest/pine green (mids) -> snow white
+  // (treble). Three-stop ramp so the green is a DISTINCT waypoint, not a pale
+  // sage transitioning to white: r and b dip through the mids while green
+  // leads, giving a saturated pine band, then all channels climb to icy white.
+  // Stays clear of Ocean (which never desaturates/whitens) and Matrix (r=0,
+  // b~=0 phosphor) — alpine's green keeps real red and blue. Tune via the
+  // ALPINE_* waypoint consts above.
   alpine: {
     bg: 'rgba(0, 0, 0, 0.92)',
     color: (i, count, t) => {
       const pct = i / count;
-      const shimmer = Math.sin(t * 0.25) * 6;
-      const greenBump = Math.sin(pct * Math.PI) * 45;
-      const r = Math.round(70 + pct * 150);
-      const g = Math.round(120 + pct * 105 + greenBump + shimmer);
-      const b = Math.round(155 + pct * 90 - greenBump * 0.6);
-      return `rgb(${Math.min(255, r)}, ${Math.min(255, g)}, ${Math.min(255, b)})`;
+      const shimmer = Math.sin(t * 0.25) * 5;
+      const lo = pct < 0.5;
+      const k = lo ? pct / 0.5 : (pct - 0.5) / 0.5;
+      const a = lo ? ALPINE_BASS : ALPINE_MID;
+      const c = lo ? ALPINE_MID : ALPINE_HIGH;
+      const r = a[0] + k * (c[0] - a[0]);
+      const g = a[1] + k * (c[1] - a[1]) + shimmer;
+      const b = a[2] + k * (c[2] - a[2]);
+      return `rgb(${Math.round(r)}, ${Math.round(Math.max(0, Math.min(255, g)))}, ${Math.round(b)})`;
     },
     amplitudeColor: (v) => {
       const pct = v / 255;
-      const r = Math.round(30 + pct * 200);
-      const g = Math.round(50 + pct * 195);
-      const b = Math.round(75 + pct * 175);
-      return `rgb(${r}, ${g}, ${b})`;
+      const lo = pct < 0.5;
+      const k = lo ? pct / 0.5 : (pct - 0.5) / 0.5;
+      const a = lo ? ALPINE_AMP_LOW : ALPINE_MID;
+      const c = lo ? ALPINE_MID : ALPINE_HIGH;
+      const r = a[0] + k * (c[0] - a[0]);
+      const g = a[1] + k * (c[1] - a[1]);
+      const b = a[2] + k * (c[2] - a[2]);
+      return `rgb(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)})`;
     },
   },
 };
