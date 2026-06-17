@@ -185,6 +185,12 @@
   padding-left: 8px;
   border-left: 1px solid rgba(255, 255, 255, 0.12);
 }
+.fs-viz-mods {
+  display: flex;
+  gap: 4px;
+  padding-left: 8px;
+  border-left: 1px solid rgba(255, 255, 255, 0.12);
+}
 
 /* ============================================================
    Control bar elements
@@ -513,6 +519,53 @@
   color: var(--accent);
 }
 
+/* Modifier toggles (Trails). Same divider treatment as the style group;
+   visually a toggle — .active means the modifier is ON. */
+.viz-modifiers {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  padding-left: 10px;
+  border-left: 1px solid var(--border-subtle);
+}
+.viz-mod-btn {
+  font-size: 0.786rem;
+  font-weight: 500;
+  padding: 3px 10px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+.viz-mod-btn:hover {
+  background: var(--bg-surface-hover);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.viz-mod-btn.active {
+  background: var(--accent-muted);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Labeled theme row — keeps the swatches always visible with a heading,
+   no toggle-hide, no height bounce. */
+.theme-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.theme-label {
+  font-size: 0.714rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
 .theme-selector {
   display: flex;
   gap: 4px;
@@ -550,6 +603,7 @@
 .theme-dot-fire { background: linear-gradient(135deg, #ff4400, #ffcc00); }
 .theme-dot-matrix { background: linear-gradient(135deg, #003300, #00ff41); }
 .theme-dot-ocean { background: linear-gradient(135deg, #0a3d6b, #20c9b0); }
+.theme-dot-alpine { background: linear-gradient(135deg, #3769a5 0%, #287840 50%, #e4ecf8 100%); }
 
 .mode-notice {
   font-size: 0.786rem;

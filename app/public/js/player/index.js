@@ -6,7 +6,7 @@ import * as api from '../shared/api.js';
 import { toast, fmtTime } from '../shared/utils.js';
 import { initControls, cleanupControls } from './controls.js';
 import { cleanupVisualizer } from './visualizer.js';
-import { initModes, setMode, cycleVizStyle, cycleTheme } from './modes.js';
+import { initModes, setMode, cycleVizStyle, cycleTheme, toggleTrails } from './modes.js';
 import { initMarkers, cleanupMarkers } from './markers.js';
 import { initBrowse } from './browse.js';
 
@@ -20,6 +20,7 @@ export const state = {
   currentMode: 'video',
   currentTheme: 'rgb',
   vizStyle: 'bars',
+  trails: false,
   fileExt: '',
 };
 
@@ -386,6 +387,16 @@ document.addEventListener('keydown', (e) => {
     case 'T':
       // Cycle color theme
       cycleTheme(e.shiftKey ? -1 : 1);
+      break;
+    case 'g':
+    case 'G':
+      // Toggle Trails modifier (per-mode persistence). Only meaningful in
+      // visualizer mode. Delegates to the shared toggleTrails so the flag,
+      // the modifiers-button highlight, and the toast stay in sync — the
+      // visualizer-only guard here preserves the original key behavior.
+      if (state.currentMode === 'visualizer') {
+        toggleTrails();
+      }
       break;
     case 'Escape':
       // Close any open overlay

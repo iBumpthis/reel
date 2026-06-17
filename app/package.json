@@ -1,6 +1,6 @@
 {
   "name": "reel",
-  "version": "1.9.2",
+  "version": "1.9.3",
   "description": "Self-hosted personal media cataloging and playback",
   "type": "module",
   "main": "server.js",
