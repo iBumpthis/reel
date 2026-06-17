@@ -313,8 +313,34 @@ function clearTrail(ctx, w, h, normalAlpha, mode) {
   ctx.fillRect(0, 0, w, h);
 }
 
-function draw() {
+// Render-rate cap. An audio visualizer gains nothing above ~60fps, but the
+// uncapped RAF loop renders at display refresh — on a 120/240Hz panel that
+// multiplies GPU cost AND, because every mode advances its physics once per
+// rendered frame, speeds up all motion proportionally. Capping normalizes
+// both: every display targets ~60fps, so cost and motion speed are
+// consistent regardless of refresh rate. Raising TARGET_FPS speeds the whole
+// suite up and the cost with it (the motion/fps coupling is deliberate but
+// real — the proper fix, delta-time-independent physics, is a larger
+// refactor parked for later).
+const TARGET_FPS = 60;
+const FRAME_INTERVAL = 1000 / TARGET_FPS;
+let lastFrameTime = 0;
+
+function draw(now) {
   vizAnimFrame = requestAnimationFrame(draw);
+
+  // Pause gate: when playback is paused the analyser is silent, so every
+  // mode either freezes or decays to nothing — rendering it just burns GPU
+  // (the idle-visualizer cost). Freeze on the last drawn frame instead. The
+  // loop stays alive (cheap no-op RAF) so play resumes rendering instantly
+  // with no event wiring. Entering the visualizer while paused shows the
+  // last frame (or black if none yet) until playback starts.
+  if (els.player.paused) return;
+
+  // Frame cap (see TARGET_FPS).
+  if (typeof now !== 'number') now = performance.now();
+  if (now - lastFrameTime < FRAME_INTERVAL) return;
+  lastFrameTime = now;
 
   const canvas = els.vizCanvas;
   const ctx = canvas.getContext('2d');
@@ -1285,12 +1311,21 @@ function drawTerminal(ctx, w, h, theme, t) {
 const FEEDBACK_SCALE = 1.0;   // buffer res vs canvas (Lite knob; 1.0 = full)
 
 const FEEDBACK_PARAMS = {
-  // decay: per-frame dimming of the accumulator (lower => shorter trail)
-  // zoom:  per-frame magnification about center (>1 => content rushes outward)
+  // decay: per-frame dimming of the accumulator (higher => content persists
+  //        further out before fading; this is what FILLS the frame)
+  // zoom:  per-frame magnification about center (>1 => content moves outward)
   // rot:   per-frame rotation about center, radians
   // bassZoom: extra zoom added on bass hits (a pulse down the tunnel)
-  wormhole: { decay: 0.90, zoom: 1.026, rot: 0.0008, bassZoom: 0.018 },
-  cascade:  { decay: 0.93, zoom: 1.012, rot: 0.013,  bassZoom: 0.010 },
+  // NOTE: tuned for the 60fps cap above — values are per-frame at 60fps.
+  //
+  // Wormhole: slow decay + steady zoom so a ring born at center survives all
+  // the way to the frame edge — that persistence is what reads as an endless
+  // tunnel rather than rings that flash and vanish. ~2s center->edge.
+  wormhole: { decay: 0.975, zoom: 1.022, rot: 0.0010, bassZoom: 0.012 },
+  // Cascade: rotation-dominant, gentle zoom. The rotation is what turns each
+  // fixed stamp position into a trailing spiral arm; zoom only blooms it
+  // outward slowly. A contained, centered mandala (fades before the edge).
+  cascade:  { decay: 0.940, zoom: 1.015, rot: 0.024,  bassZoom: 0.008 },
 };
 
 let fbA = null, fbB = null;   // the two ping-pong buffers (detached canvases)
@@ -1383,44 +1418,59 @@ function feedbackStep(ctx, w, h, theme, t, mode, stamp) {
 // Mode: Wormhole (feedback tunnel)
 // ------------------------------------------------------------
 // Content: a thin reactive frequency ring stamped near center each frame.
-// Transform: strong center zoom (walls rush outward), faint swirl. The
-// zoom drags each ring outward into a concentric tunnel wall; fresh rings
-// are born at the center radius continuously, reading as falling through.
+// Transform: steady center zoom (the ring is dragged outward into a tunnel
+// wall) with slow decay so rings persist all the way to the frame edge —
+// that persistence is what fills the frame and reads as falling through,
+// rather than rings that flash and fade near center.
+//
+// The ring is MIRRORED left/right (bass at top, treble at bottom, each side
+// a mirror) so it stays balanced and intentional instead of bulging on the
+// bass side — the v1 single-sweep ring put all the bass on one side and
+// peaked over itself there. Radial reactivity is also reduced so adjacent
+// segments don't fold over each other. There is deliberately NO bright
+// central core: a glowing orb at center reads as an object approaching the
+// viewer and fights the tunnel's depth (the center should be the dark
+// vanishing point you fall toward).
 // ============================================================
-const WORMHOLE_SEGMENTS = 72;
+const WORMHOLE_SEGMENTS = 96;     // even — mirrors cleanly about the vertical
+const WORMHOLE_REACT = 0.35;      // radial reactivity (was 0.6 — less self-overlap)
 
 function stampWormholeRing(dctx, bw, bh, t, theme, bass) {
   const cx = bw / 2, cy = bh / 2;
-  const baseR = Math.min(bw, bh) * 0.16;
+  const minDim = Math.min(bw, bh);
+  const baseR = minDim * 0.14;
+  const half = WORMHOLE_SEGMENTS / 2;
   const usable = Math.max(1, Math.floor(analyser.frequencyBinCount * 0.4));
 
-  dctx.lineWidth = Math.max(2, Math.min(bw, bh) * 0.006);
+  dctx.lineWidth = Math.max(2, minDim * 0.005);
   dctx.lineJoin = 'round';
+  dctx.lineCap = 'round';
 
-  for (let i = 0; i < WORMHOLE_SEGMENTS; i++) {
-    const a0 = (i / WORMHOLE_SEGMENTS) * Math.PI * 2;
-    const a1 = ((i + 1) / WORMHOLE_SEGMENTS) * Math.PI * 2;
-    const bin0 = Math.floor((i / WORMHOLE_SEGMENTS) * usable);
-    const bin1 = Math.floor(((i + 1) / WORMHOLE_SEGMENTS) * usable);
-    const amp = freqData[bin0] / 255;
-    const r0 = baseR * (1 + amp * 0.6);
-    const r1 = baseR * (1 + (freqData[bin1] / 255) * 0.6);
+  // Walk the full circle; map each segment to a MIRRORED bin index so the
+  // left and right halves share the same spectrum (bass at 12 o'clock,
+  // treble at 6 o'clock). Draw segment-by-segment so per-segment alpha/color
+  // can track amplitude.
+  let prevX = 0, prevY = 0;
+  for (let i = 0; i <= WORMHOLE_SEGMENTS; i++) {
+    const seg = i % WORMHOLE_SEGMENTS;
+    const m = seg < half ? seg : WORMHOLE_SEGMENTS - seg;   // 0..half..0 (mirror)
+    const bin = Math.floor((m / half) * usable);
+    const amp = freqData[bin] / 255;
+    const ang = (seg / WORMHOLE_SEGMENTS) * Math.PI * 2 - Math.PI / 2;  // start at top
+    const r = baseR * (1 + amp * WORMHOLE_REACT);
+    const x = cx + Math.cos(ang) * r;
+    const y = cy + Math.sin(ang) * r;
 
-    dctx.strokeStyle = theme.color(i, WORMHOLE_SEGMENTS, t);
-    dctx.globalAlpha = 0.5 + amp * 0.5;
-    dctx.beginPath();
-    dctx.moveTo(cx + Math.cos(a0) * r0, cy + Math.sin(a0) * r0);
-    dctx.lineTo(cx + Math.cos(a1) * r1, cy + Math.sin(a1) * r1);
-    dctx.stroke();
-  }
-
-  // Bass core flash — a small bright pulse the zoom drags down the tunnel.
-  if (bass > 0.12) {
-    dctx.globalAlpha = Math.min(0.9, bass);
-    dctx.fillStyle = theme.color(0, WORMHOLE_SEGMENTS, t);
-    dctx.beginPath();
-    dctx.arc(cx, cy, baseR * 0.5 * bass, 0, Math.PI * 2);
-    dctx.fill();
+    if (i > 0) {
+      dctx.strokeStyle = theme.color(m, half, t);
+      dctx.globalAlpha = 0.5 + amp * 0.45;
+      dctx.beginPath();
+      dctx.moveTo(prevX, prevY);
+      dctx.lineTo(x, y);
+      dctx.stroke();
+    }
+    prevX = x;
+    prevY = y;
   }
 
   dctx.globalAlpha = 1.0;
@@ -1431,66 +1481,96 @@ function drawWormhole(ctx, w, h, theme, t) {
 }
 
 // ============================================================
-// Mode: Cascade (feedback mandala)
+// Mode: Cascade (feedback spiral mandala)
 // ------------------------------------------------------------
-// Content: an EQ-driven crystalline polygon (a faceted star) stamped at
-// center. Transform: gentle zoom + steady rotation. Each echo is a scaled,
-// rotated copy of the whole, so self-similar facets bloom outward into a
-// kaleidoscopic mandala.
+// Rebuilt after the v1 single-centered-star design: a lone shape at center,
+// zoomed uniformly, only ever makes concentric rotated copies of itself —
+// it "just expands," and a 6-point alternating star collapses into a Star
+// of David when quiet. Neither was wanted.
 //
-// The stamp is angular / crystalline, NOT a literal mountain: the engine
-// rotates the stamp every frame, and a mountain's legibility depends on a
-// fixed horizon — rotation turns it into a spinning triangle, and killing
-// rotation to keep it upright collapses Cascade into Wormhole. A radially
-// coherent crystal survives rotation and keeps the PNW / alpine feeling.
+// The richness in a feedback mandala comes from OFF-CENTER content: a fixed
+// stamp position, rotated a little each frame by the engine, leaves a
+// trailing SPIRAL ARM of its past echoes. So Cascade stamps a rosette of
+// crystal shards at a ring radius — each shard position emits its own spiral
+// arm — plus a small irregular crystal seed at the very center as a focal
+// point. Rotation is the dominant transform (zoom is gentle), so the result
+// swirls and interleaves into a mandala instead of a static bloom.
+//
+// Shape choices are deliberately NON-SYMBOLIC: ARMS = 5 (a 5-fold rosette
+// reads floral / galactic, and the arms are filled outward shards, never a
+// connected 5-point star outline, so no pentagram); the seed is a 7-facet
+// convex crystal (irregular, EQ-jittered — a heptagon reads as a gem, not
+// any recognized symbol). Avoids the 6-fold (hexagram) and 5-point-star
+// (pentagram) shapes entirely. Crystalline still carries the alpine/PNW nod.
 // ============================================================
-const CASCADE_FACETS = 6;   // star point count; even-index verts are the points
+const CASCADE_ARMS = 5;          // rosette arm count (NOT 6 -> no hexagram)
+const CASCADE_SEED_FACETS = 7;   // central crystal facets (irregular convex gem)
 
-function stampCascadeCrystal(dctx, bw, bh, t, theme, bass) {
+function stampCascade(dctx, bw, bh, t, theme, bass) {
   const cx = bw / 2, cy = bh / 2;
   const binCount = analyser.frequencyBinCount;
+  const minDim = Math.min(bw, bh);
+  const usable = Math.max(1, Math.floor(binCount * 0.4));
 
-  // Mid-band energy drives the inner radius (Particles/Nova band convention).
+  // Mid-band energy (Particles/Nova band convention) for the seed.
   const bassEnd = Math.max(1, Math.floor(binCount * 0.08));
   const midEnd = Math.max(bassEnd + 1, Math.floor(binCount * 0.3));
   let mid = 0;
   for (let i = bassEnd; i < midEnd; i++) mid += freqData[i];
   mid = mid / (midEnd - bassEnd) / 255;
 
-  const baseR = Math.min(bw, bh) * 0.12;
-  const outer = baseR * (0.6 + bass * 1.4);
-  const inner = baseR * (0.25 + mid * 0.6);
-  const usable = Math.max(1, Math.floor(binCount * 0.4));
+  // --- Spiral-arm rosette: a crystal shard at each arm position. Each shard
+  // is a thin outward diamond; the engine's rotation trails it into a spiral
+  // arm. Shard length/brightness track a per-arm frequency bin. ---
+  const ringR = minDim * 0.085 * (1 + bass * 0.7);   // ring pulses with bass
+  const shardBase = minDim * 0.05;
+  for (let k = 0; k < CASCADE_ARMS; k++) {
+    const ang = (k / CASCADE_ARMS) * Math.PI * 2 - Math.PI / 2;
+    const bin = Math.floor((k / CASCADE_ARMS) * usable);
+    const amp = freqData[bin] / 255;
+    const len = shardBase * (0.4 + amp * 1.6);
+    const wd = shardBase * 0.16 * (0.6 + amp);
 
-  // Crystalline star: alternating outer / inner vertices. Each outer point's
-  // radius is jittered by a distinct frequency bin, so the facet silhouette
-  // is EQ-driven and irregular rather than a clean regular polygon.
-  const verts = CASCADE_FACETS * 2;
+    const ca = Math.cos(ang), sa = Math.sin(ang);
+    const pa = ang + Math.PI / 2;
+    const cp = Math.cos(pa), sp = Math.sin(pa);
+    const baseX = cx + ca * ringR, baseY = cy + sa * ringR;
+    const tipX = cx + ca * (ringR + len), tipY = cy + sa * (ringR + len);
+
+    dctx.beginPath();
+    dctx.moveTo(baseX + cp * wd, baseY + sp * wd);
+    dctx.lineTo(tipX, tipY);
+    dctx.lineTo(baseX - cp * wd, baseY - sp * wd);
+    dctx.lineTo(cx + ca * (ringR - wd), cy + sa * (ringR - wd));  // inner notch
+    dctx.closePath();
+
+    dctx.fillStyle = theme.color(bin, usable, t);
+    dctx.globalAlpha = 0.35 + amp * 0.6;
+    dctx.fill();
+  }
+
+  // --- Central crystal seed: an irregular convex faceted gem (no inner/outer
+  // alternation, so it's a gem silhouette, not a star). ---
+  const seedR = minDim * 0.038 * (0.7 + mid * 0.9);
   dctx.beginPath();
-  for (let k = 0; k < verts; k++) {
-    const ang = (k / verts) * Math.PI * 2 - Math.PI / 2;
-    let r;
-    if (k % 2 === 0) {
-      const bin = Math.floor((k / verts) * usable);
-      r = outer * (0.7 + (freqData[bin] / 255) * 0.6);
-    } else {
-      r = inner;
-    }
-    const x = cx + Math.cos(ang) * r;
-    const y = cy + Math.sin(ang) * r;
-    if (k === 0) dctx.moveTo(x, y); else dctx.lineTo(x, y);
+  for (let i = 0; i < CASCADE_SEED_FACETS; i++) {
+    const a = (i / CASCADE_SEED_FACETS) * Math.PI * 2 - Math.PI / 2;
+    const b = Math.floor((i / CASCADE_SEED_FACETS) * usable);
+    const r = seedR * (0.75 + (freqData[b] / 255) * 0.5);
+    const x = cx + Math.cos(a) * r;
+    const y = cy + Math.sin(a) * r;
+    if (i === 0) dctx.moveTo(x, y); else dctx.lineTo(x, y);
   }
   dctx.closePath();
 
-  // Faint fill + bright faceted edges, both theme-colored.
   dctx.fillStyle = theme.color(8, 64, t);
-  dctx.globalAlpha = 0.10 + mid * 0.18;
+  dctx.globalAlpha = 0.12 + mid * 0.20;
   dctx.fill();
 
-  dctx.lineWidth = Math.max(1.5, Math.min(bw, bh) * 0.004);
+  dctx.lineWidth = Math.max(1.5, minDim * 0.004);
   dctx.lineJoin = 'round';
   dctx.strokeStyle = theme.color(40, 64, t);
-  dctx.globalAlpha = 0.6 + mid * 0.4;
+  dctx.globalAlpha = 0.55 + mid * 0.45;
   dctx.stroke();
 
   // White-hot core on strong bass (the reusable peak double-draw technique).
@@ -1498,7 +1578,7 @@ function stampCascadeCrystal(dctx, bw, bh, t, theme, bass) {
     dctx.fillStyle = '#fff';
     dctx.globalAlpha = Math.min(0.8, (bass - 0.5) / 0.5);
     dctx.beginPath();
-    dctx.arc(cx, cy, inner * 0.5, 0, Math.PI * 2);
+    dctx.arc(cx, cy, seedR * 0.45, 0, Math.PI * 2);
     dctx.fill();
   }
 
@@ -1506,7 +1586,7 @@ function stampCascadeCrystal(dctx, bw, bh, t, theme, bass) {
 }
 
 function drawCascade(ctx, w, h, theme, t) {
-  feedbackStep(ctx, w, h, theme, t, 'cascade', stampCascadeCrystal);
+  feedbackStep(ctx, w, h, theme, t, 'cascade', stampCascade);
 }
 
 // ============================================================
@@ -1514,7 +1594,8 @@ function drawCascade(ctx, w, h, theme, t) {
 // ============================================================
 export function startViz() {
   if (vizAnimFrame) return;
-  draw();
+  lastFrameTime = 0;
+  vizAnimFrame = requestAnimationFrame(draw);
 }
 
 export function stopViz() {
