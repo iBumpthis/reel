@@ -2,8 +2,9 @@
  * Reel — Visualizer.
  * Web Audio API analyser with multiple render modes and color themes.
  *
- * Modes:  bars, lines, circular, spectrogram, particles, nova, matrix, terminal
- * Themes: muted, colorful, rgb, neon, fire, matrix, ocean
+ * Modes:  bars, lines, circular, spectrogram, particles, nova, matrix,
+ *         terminal, wormhole, cascade
+ * Themes: muted, colorful, rgb, neon, fire, matrix, ocean, alpine
  *
  * Copyright (c) 2026 iBumpthis
  * SPDX-License-Identifier: GPL-3.0-or-later
@@ -18,7 +19,7 @@ let freqData = null;
 let waveData = null;
 
 // Ordered lists for keyboard cycling
-export const VIZ_STYLES = ['bars', 'lines', 'circular', 'spectrogram', 'particles', 'nova', 'matrix', 'terminal'];
+export const VIZ_STYLES = ['bars', 'lines', 'circular', 'spectrogram', 'particles', 'nova', 'matrix', 'terminal', 'wormhole', 'cascade'];
 export const THEME_NAMES = ['muted', 'colorful', 'rgb', 'neon', 'fire', 'matrix', 'ocean', 'alpine'];
 
 // ============================================================
@@ -344,6 +345,8 @@ function draw() {
     case 'nova':        drawNova(ctx, w, h, theme, t); break;
     case 'matrix':      drawMatrix(ctx, w, h, theme, t); break;
     case 'terminal':    drawTerminal(ctx, w, h, theme, t); break;
+    case 'wormhole':    drawWormhole(ctx, w, h, theme, t); break;
+    case 'cascade':     drawCascade(ctx, w, h, theme, t); break;
     default:            drawBars(ctx, w, h, theme, t);
   }
 }
@@ -1247,6 +1250,266 @@ function drawTerminal(ctx, w, h, theme, t) {
 }
 
 // ============================================================
+// Feedback engine (ping-pong) — shared by Wormhole + Cascade  (v1.9.3)
+// ------------------------------------------------------------
+// Two detached offscreen canvases swapped each frame. The previous
+// accumulator (src) is drawn into the fresh buffer (dst) dimmed and
+// transformed (zoom / rotate about center); the mode's new content is then
+// stamped on top; dst is blitted to the visible canvas and becomes next
+// frame's src. This is true ping-pong — read a clean src, write a clean
+// dst — NOT same-canvas self-draw: self-draw aliases read==write and the
+// resulting smear is worst exactly in Wormhole's strong-center-zoom
+// (max-magnification) case, so it's built ping-pong from the start.
+//
+// Detached <canvas> (document.createElement), NOT OffscreenCanvas — the
+// Xbox Edge clone among Reel's targets lacks reliable OffscreenCanvas, the
+// same target-compat reason HAS_ROUND_RECT is feature-detected above. 2D
+// drawImage compositing is equivalent on a detached canvas.
+//
+// Trails (state.trails) does NOT apply to these modes — decay IS their
+// persistence. They are Trails-exempt like Spectro / Terminal; tune decay
+// (per-mode, below) instead of the TRAIL_ALPHA table.
+//
+// PERFORMANCE: this is the heaviest per-frame op in the suite — two
+// full-canvas draws/frame (transformed src->dst, then dst->visible) plus
+// the content stamp. FEEDBACK_SCALE renders both buffers at a fraction of
+// canvas resolution; 1.0 is full quality. It's the single highest-leverage
+// knob for the planned Lite path — drop it to ~0.5 and the per-frame
+// pixel work roughly quarters, with the only cost a softer tunnel. Buffer
+// size tracks the visible canvas; a genuine resize discards the
+// accumulator (one black frame, then it rebuilds — resize is rare).
+//
+// Every value here is a post-delivery tuning knob; manual fine-tuning of
+// decay / zoom / rot / bassZoom is expected and normal.
+// ============================================================
+const FEEDBACK_SCALE = 1.0;   // buffer res vs canvas (Lite knob; 1.0 = full)
+
+const FEEDBACK_PARAMS = {
+  // decay: per-frame dimming of the accumulator (lower => shorter trail)
+  // zoom:  per-frame magnification about center (>1 => content rushes outward)
+  // rot:   per-frame rotation about center, radians
+  // bassZoom: extra zoom added on bass hits (a pulse down the tunnel)
+  wormhole: { decay: 0.90, zoom: 1.026, rot: 0.0008, bassZoom: 0.018 },
+  cascade:  { decay: 0.93, zoom: 1.012, rot: 0.013,  bassZoom: 0.010 },
+};
+
+let fbA = null, fbB = null;   // the two ping-pong buffers (detached canvases)
+let fbW = 0, fbH = 0;         // current buffer pixel size
+let fbActiveMode = null;      // last feedback mode drawn (clear-on-switch guard)
+
+// (Re)create the buffers at the given canvas size. Recreated buffers start
+// transparent (cleared), so a resize or a cold start begins from black
+// rather than a stale accumulator.
+function ensureFeedback(w, h) {
+  const bw = Math.max(1, Math.round(w * FEEDBACK_SCALE));
+  const bh = Math.max(1, Math.round(h * FEEDBACK_SCALE));
+  if (fbA && fbW === bw && fbH === bh) return;
+  fbW = bw;
+  fbH = bh;
+  fbA = document.createElement('canvas');
+  fbB = document.createElement('canvas');
+  fbA.width = bw; fbA.height = bh;
+  fbB.width = bw; fbB.height = bh;
+}
+
+// One ping-pong step. `stamp(dctx, bw, bh, t, theme, bass)` draws the
+// fresh content onto the dst buffer in buffer-pixel space. freqData is
+// fetched once here and is current for the stamp to reuse.
+function feedbackStep(ctx, w, h, theme, t, mode, stamp) {
+  ensureFeedback(w, h);
+
+  // Clear-on-switch: entering this mode (or swapping wormhole<->cascade)
+  // discards the other mode's accumulator so there's no cross-bleed and no
+  // stale flash on re-entry.
+  if (fbActiveMode !== mode) {
+    fbA.getContext('2d').clearRect(0, 0, fbW, fbH);
+    fbB.getContext('2d').clearRect(0, 0, fbW, fbH);
+    fbActiveMode = mode;
+  }
+
+  const p = FEEDBACK_PARAMS[mode];
+  const bw = fbW, bh = fbH;
+  const cx = bw / 2, cy = bh / 2;
+
+  // Bass energy for reactive zoom (same low-band convention as Particles/Nova)
+  analyser.getByteFrequencyData(freqData);
+  const bassEnd = Math.max(1, Math.floor(analyser.frequencyBinCount * 0.08));
+  let bass = 0;
+  for (let i = 0; i < bassEnd; i++) bass += freqData[i];
+  bass = bass / bassEnd / 255;
+
+  const zoom = p.zoom + bass * p.bassZoom;
+
+  const src = fbA;
+  const dst = fbB;
+  const dctx = dst.getContext('2d');
+
+  // Fresh dst: clear, then draw the dimmed + transformed previous accumulator.
+  // source-over (default) compositing — NOT 'lighter' — so brightness can't
+  // run away to white at the center where every echo overlaps.
+  dctx.setTransform(1, 0, 0, 1, 0, 0);
+  dctx.globalAlpha = 1.0;
+  dctx.clearRect(0, 0, bw, bh);
+  dctx.save();
+  dctx.globalAlpha = p.decay;
+  dctx.translate(cx, cy);
+  dctx.scale(zoom, zoom);
+  dctx.rotate(p.rot);
+  dctx.translate(-cx, -cy);
+  dctx.drawImage(src, 0, 0);
+  dctx.restore();
+
+  // Stamp fresh content on top at full strength.
+  dctx.globalAlpha = 1.0;
+  stamp(dctx, bw, bh, t, theme, bass);
+
+  // Compose to the visible canvas: opaque bg, then the accumulator.
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.globalAlpha = 1.0;
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, w, h);
+  if (FEEDBACK_SCALE === 1.0) {
+    ctx.drawImage(dst, 0, 0);
+  } else {
+    ctx.drawImage(dst, 0, 0, bw, bh, 0, 0, w, h);
+  }
+
+  // Swap: dst becomes next frame's src.
+  fbA = dst;
+  fbB = src;
+}
+
+// ============================================================
+// Mode: Wormhole (feedback tunnel)
+// ------------------------------------------------------------
+// Content: a thin reactive frequency ring stamped near center each frame.
+// Transform: strong center zoom (walls rush outward), faint swirl. The
+// zoom drags each ring outward into a concentric tunnel wall; fresh rings
+// are born at the center radius continuously, reading as falling through.
+// ============================================================
+const WORMHOLE_SEGMENTS = 72;
+
+function stampWormholeRing(dctx, bw, bh, t, theme, bass) {
+  const cx = bw / 2, cy = bh / 2;
+  const baseR = Math.min(bw, bh) * 0.16;
+  const usable = Math.max(1, Math.floor(analyser.frequencyBinCount * 0.4));
+
+  dctx.lineWidth = Math.max(2, Math.min(bw, bh) * 0.006);
+  dctx.lineJoin = 'round';
+
+  for (let i = 0; i < WORMHOLE_SEGMENTS; i++) {
+    const a0 = (i / WORMHOLE_SEGMENTS) * Math.PI * 2;
+    const a1 = ((i + 1) / WORMHOLE_SEGMENTS) * Math.PI * 2;
+    const bin0 = Math.floor((i / WORMHOLE_SEGMENTS) * usable);
+    const bin1 = Math.floor(((i + 1) / WORMHOLE_SEGMENTS) * usable);
+    const amp = freqData[bin0] / 255;
+    const r0 = baseR * (1 + amp * 0.6);
+    const r1 = baseR * (1 + (freqData[bin1] / 255) * 0.6);
+
+    dctx.strokeStyle = theme.color(i, WORMHOLE_SEGMENTS, t);
+    dctx.globalAlpha = 0.5 + amp * 0.5;
+    dctx.beginPath();
+    dctx.moveTo(cx + Math.cos(a0) * r0, cy + Math.sin(a0) * r0);
+    dctx.lineTo(cx + Math.cos(a1) * r1, cy + Math.sin(a1) * r1);
+    dctx.stroke();
+  }
+
+  // Bass core flash — a small bright pulse the zoom drags down the tunnel.
+  if (bass > 0.12) {
+    dctx.globalAlpha = Math.min(0.9, bass);
+    dctx.fillStyle = theme.color(0, WORMHOLE_SEGMENTS, t);
+    dctx.beginPath();
+    dctx.arc(cx, cy, baseR * 0.5 * bass, 0, Math.PI * 2);
+    dctx.fill();
+  }
+
+  dctx.globalAlpha = 1.0;
+}
+
+function drawWormhole(ctx, w, h, theme, t) {
+  feedbackStep(ctx, w, h, theme, t, 'wormhole', stampWormholeRing);
+}
+
+// ============================================================
+// Mode: Cascade (feedback mandala)
+// ------------------------------------------------------------
+// Content: an EQ-driven crystalline polygon (a faceted star) stamped at
+// center. Transform: gentle zoom + steady rotation. Each echo is a scaled,
+// rotated copy of the whole, so self-similar facets bloom outward into a
+// kaleidoscopic mandala.
+//
+// The stamp is angular / crystalline, NOT a literal mountain: the engine
+// rotates the stamp every frame, and a mountain's legibility depends on a
+// fixed horizon — rotation turns it into a spinning triangle, and killing
+// rotation to keep it upright collapses Cascade into Wormhole. A radially
+// coherent crystal survives rotation and keeps the PNW / alpine feeling.
+// ============================================================
+const CASCADE_FACETS = 6;   // star point count; even-index verts are the points
+
+function stampCascadeCrystal(dctx, bw, bh, t, theme, bass) {
+  const cx = bw / 2, cy = bh / 2;
+  const binCount = analyser.frequencyBinCount;
+
+  // Mid-band energy drives the inner radius (Particles/Nova band convention).
+  const bassEnd = Math.max(1, Math.floor(binCount * 0.08));
+  const midEnd = Math.max(bassEnd + 1, Math.floor(binCount * 0.3));
+  let mid = 0;
+  for (let i = bassEnd; i < midEnd; i++) mid += freqData[i];
+  mid = mid / (midEnd - bassEnd) / 255;
+
+  const baseR = Math.min(bw, bh) * 0.12;
+  const outer = baseR * (0.6 + bass * 1.4);
+  const inner = baseR * (0.25 + mid * 0.6);
+  const usable = Math.max(1, Math.floor(binCount * 0.4));
+
+  // Crystalline star: alternating outer / inner vertices. Each outer point's
+  // radius is jittered by a distinct frequency bin, so the facet silhouette
+  // is EQ-driven and irregular rather than a clean regular polygon.
+  const verts = CASCADE_FACETS * 2;
+  dctx.beginPath();
+  for (let k = 0; k < verts; k++) {
+    const ang = (k / verts) * Math.PI * 2 - Math.PI / 2;
+    let r;
+    if (k % 2 === 0) {
+      const bin = Math.floor((k / verts) * usable);
+      r = outer * (0.7 + (freqData[bin] / 255) * 0.6);
+    } else {
+      r = inner;
+    }
+    const x = cx + Math.cos(ang) * r;
+    const y = cy + Math.sin(ang) * r;
+    if (k === 0) dctx.moveTo(x, y); else dctx.lineTo(x, y);
+  }
+  dctx.closePath();
+
+  // Faint fill + bright faceted edges, both theme-colored.
+  dctx.fillStyle = theme.color(8, 64, t);
+  dctx.globalAlpha = 0.10 + mid * 0.18;
+  dctx.fill();
+
+  dctx.lineWidth = Math.max(1.5, Math.min(bw, bh) * 0.004);
+  dctx.lineJoin = 'round';
+  dctx.strokeStyle = theme.color(40, 64, t);
+  dctx.globalAlpha = 0.6 + mid * 0.4;
+  dctx.stroke();
+
+  // White-hot core on strong bass (the reusable peak double-draw technique).
+  if (bass > 0.5) {
+    dctx.fillStyle = '#fff';
+    dctx.globalAlpha = Math.min(0.8, (bass - 0.5) / 0.5);
+    dctx.beginPath();
+    dctx.arc(cx, cy, inner * 0.5, 0, Math.PI * 2);
+    dctx.fill();
+  }
+
+  dctx.globalAlpha = 1.0;
+}
+
+function drawCascade(ctx, w, h, theme, t) {
+  feedbackStep(ctx, w, h, theme, t, 'cascade', stampCascadeCrystal);
+}
+
+// ============================================================
 // Start / stop
 // ============================================================
 export function startViz() {
@@ -1271,6 +1534,12 @@ export function initVisualizer(_state, _els) {
 
 export function cleanupVisualizer() {
   stopViz();
+  // Release the feedback buffers (the suite's largest retained allocations).
+  fbA = null;
+  fbB = null;
+  fbW = 0;
+  fbH = 0;
+  fbActiveMode = null;
   if (audioCtx) {
     audioCtx.close().catch(() => {});
   }
