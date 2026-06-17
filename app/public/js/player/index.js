@@ -6,7 +6,7 @@ import * as api from '../shared/api.js';
 import { toast, fmtTime } from '../shared/utils.js';
 import { initControls, cleanupControls } from './controls.js';
 import { cleanupVisualizer } from './visualizer.js';
-import { initModes, setMode, cycleVizStyle, cycleTheme } from './modes.js';
+import { initModes, setMode, cycleVizStyle, cycleTheme, toggleTrails } from './modes.js';
 import { initMarkers, cleanupMarkers } from './markers.js';
 import { initBrowse } from './browse.js';
 
@@ -391,11 +391,11 @@ document.addEventListener('keydown', (e) => {
     case 'g':
     case 'G':
       // Toggle Trails modifier (per-mode persistence). Only meaningful in
-      // visualizer mode. Permanent control is the Track B modifiers button —
-      // this shortcut toggles the same state.trails flag.
+      // visualizer mode. Delegates to the shared toggleTrails so the flag,
+      // the modifiers-button highlight, and the toast stay in sync — the
+      // visualizer-only guard here preserves the original key behavior.
       if (state.currentMode === 'visualizer') {
-        state.trails = !state.trails;
-        toast(`Trails ${state.trails ? 'on' : 'off'}`);
+        toggleTrails();
       }
       break;
     case 'Escape':
