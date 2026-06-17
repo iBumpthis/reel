@@ -419,21 +419,116 @@ behind the larger infra build.
   over-bright anchor spires. The poles are now drawn once so every inner mirror
   shares one alpha.
 
+### v1.9.3 — Feedback Engine, Visualizer Pack & Performance Pass
+
+The Visualizer Pack, restructured mid-phase from "a few more modes" into a
+combined engine build, control-band reorg, performance pass, and a Terminal
+rework. Two net-new visualizer modes (ten total) on a reusable feedback engine,
+an eighth theme, a frame-persistence modifier, a toolbar reorganization, a
+render-rate cap that resolved a large GPU/refresh-rate coupling, and a
+pause-aware Terminal. Entirely frontend — no backend, schema, or dependency
+changes.
+
+- **Feedback engine (ping-pong).** A reusable accumulator engine shared by the
+  two new modes. Each frame draws the previous accumulator into a fresh buffer
+  dimmed and transformed (zoom/rotate about center), stamps new content on top,
+  blits to the visible canvas, and swaps. Built ping-pong (two detached
+  buffers, clean read → clean write) rather than same-canvas self-draw, whose
+  read==write aliasing smears worst in the strong-center-zoom case. Detached
+  `<canvas>`, not `OffscreenCanvas`, for target compatibility (the Xbox Edge
+  clone). Per-mode transform knobs (`decay`, `zoom`, `rot`, `bassZoom`) live in
+  `FEEDBACK_PARAMS`. `FEEDBACK_SCALE` renders the buffers at a fraction of
+  canvas resolution — held at 1.0, wired as the primary lever for a future
+  Lite/performance mode.
+- **Wormhole** (mode 9). A reactive frequency ring stamped near center each
+  frame; slow decay + steady zoom carry rings out to the frame edge as a
+  filling tunnel, with a slow corkscrew. The ring is mirrored left/right (bass
+  at top, treble at bottom) for balance, with no central core — a bright center
+  reads as an object approaching, fighting the depth illusion.
+- **Cascade** (mode 10). A crystalline spiral mandala: a 5-arm rosette of
+  crystal shards (off-center content the rotation trails into spiral arms) plus
+  a 7-facet convex crystal seed, rotation-dominant with gentle zoom. Shapes
+  chosen to avoid recognizable symbols (no hexagram/pentagram). Arm extension
+  is bass- and peak-reactive so the rosette punches outward on hits. The
+  centerpiece is flagged for a future revisit (see Planned).
+- **Trails modifier.** Optional per-mode frame persistence for six modes (Bars,
+  Radial, Lines, Particles, Nova, Matrix). Lowers each mode's clear-alpha so
+  frames streak — not an engine-level clear-swap. Toggled by the `G` key and a
+  modifiers button, both routed through a single `toggleTrails`. Spectro,
+  Terminal, and the two feedback modes are exempt — their own clears/decay are
+  their persistence.
+- **Alpine theme** (theme 8). A glacier-blue → forest-green → snow-white
+  three-stop ramp with a distinct dark-green mid waypoint, differentiated from
+  Ocean (stays saturated) and Matrix (phosphor green, no red/blue). Tunable via
+  `ALPINE_*` consts.
+- **Track B — control-band reorg.** The toolbar now groups transport/mode | viz
+  styles (ten, wrapping) | modifiers | a labeled theme row (eight swatches incl.
+  alpine). All viz controls stay always-visible — grouped, not hidden — with no
+  height bounce. Mirrored into the fullscreen bar.
+- **Performance — 60fps render cap (`TARGET_FPS`).** The draw loop rendered at
+  display refresh, so a 120/240Hz panel paid multiples of the GPU cost AND ran
+  every mode's per-frame physics proportionally faster (particles, rain, and
+  feedback all advance once per rendered frame). The cap normalizes both —
+  every display targets ~60fps, so cost and motion speed are consistent
+  regardless of refresh rate. On a 240Hz test panel this brought fullscreen GPU
+  from the 40-55% range to under 20%. The motion/fps coupling is now explicit;
+  delta-time-independent physics is the proper long-term fix, parked.
+- **Performance — pause gate.** When playback is paused the analyser is silent,
+  so every mode freezes or decays to nothing — rendering it just burns GPU. The
+  loop now freezes on the last frame while paused (Terminal excepted). Idle GPU
+  dropped from ~9% to near the browser-compositor floor.
+- **Terminal — pause-aware rework.** Terminal is the one mode deliberately
+  exempt from the pause gate, so it can run a pause story instead of freezing.
+  Reframed as `tail -f /var/log/reel/audio_output.log`: the first line on every
+  (re)start is the tail command, and freq lines stream in below it. A
+  four-phase machine — `streaming → ^C → drain → idle` — drops a `^C` on pause,
+  drains the buffer up and off the top, and settles to an idle prompt with a
+  blinking block cursor; resume re-runs the tail. The idle phase self-throttles
+  to the cursor blink rate (~2 full redraws/sec, not 60), so the exemption
+  stays near the idle floor — the full-canvas clear, not the text, is
+  Terminal's per-frame cost. A resync guard (`TERM_RESYNC_MS`) prevents the
+  wall-clock catch-up loop from burst-spawning on resume or after a
+  backgrounded tab. The monolithic draw split into `seedStream` /
+  `spawnTermLines` / `renderTermLines` / `drawTermIdlePrompt` so the drain
+  reuses the line renderer with a vertical offset.
+- **Module header** themes comment updated to include `alpine` (was stale).
+
 ---
 
 ## Planned
 
-### v1.9.X — Visualizer Pack
+### Visualizer polish (post-1.9.3)
 
-Additional and punched-up visualizer modes, plus the control-band layout pass
-deferred from v1.9.0. The toolbar reorganization is intentionally held until
-the new mode count is known: a single added mode likely fits the current row,
-whereas several modes — or a sub-mode selector — changes the layout
-materially. Scope, candidate modes, and reusable patterns are tracked in the
-v1.9.1 handoff document. Particles and Nova remain the quality bar. Current
-roster: Bars, Lines, Radial, Spectro, Particles, Nova, Matrix, Terminal (eight
-modes; the row is at comfortable density, so net-new modes drive the layout
-decision).
+Deferred from the v1.9.3 feedback-engine phase — quality passes to revisit
+after the build ships and gets tested on real (and ideally slower) hardware.
+Both are "it works and is liked as-is, but there's a clear next step":
+
+- **Post-FPS-cap Matrix / Particles tuning.** The v1.9.3 60fps render cap
+  normalized motion speed across refresh rates, but because these modes advance
+  their per-frame physics once per rendered frame, their wall-clock motion is
+  now slower than it was on a high-refresh display — Matrix Rain in particular
+  reads more as a light drizzle than driving rain (the difference is most
+  obvious with the pre-cap build open side by side). The fix is to retune the
+  per-frame motion constants up to the intended feel at 60fps (Matrix fall
+  speed; particle force/velocity/damping), NOT to remove the cap. The deeper
+  fix — delta-time-independent physics so motion is decoupled from framerate
+  entirely — is the larger refactor this defers, and it would touch the
+  Particles/Nova code that's otherwise considered done.
+- **Cascade centerpiece — spikier and more shape-y.** The current 7-facet
+  convex crystal seed reads as a clean gem but is visually quiet against the
+  reactive rosette arms. Target vibe: a faceted polyhedron that grows poly
+  spikes on hits — the "Bit" from the original Tron, dialed back (the
+  shape-plus-spike-on-peak behavior, not the literal character or its
+  extremes). Implementation direction: reactive spike extrusion from the seed
+  faces on bass/peak, layered over the existing rosette. The arms and overall
+  motion are considered good; this is specifically the centerpiece.
+
+### v1.9.X — Visualizer Pack (shipped as v1.9.3)
+
+Shipped. The two feedback modes (Wormhole, Cascade), the eighth theme (Alpine),
+the Trails modifier, the Track B control-band reorg, and the performance pass
+all landed in v1.9.3. Roster is now ten modes: Bars, Lines, Radial, Spectro,
+Particles, Nova, Matrix, Terminal, Wormhole, Cascade.
 
 ### Future — Feature Evaluation
 

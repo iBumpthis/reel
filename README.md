@@ -187,11 +187,13 @@ Browse, search, filter, and edit your media collection. Features include:
 Click any media item to open the player. Features include:
 
 - Video, audio, and visualizer playback modes
-- Eight visualizer modes: frequency bars, waveform lines, radial, spectrogram,
-  particle field, nova, matrix rain, and terminal (scrolling bash-style
-  frequency display with easter egg system — fake shell commands, movie quotes,
-  ASCII art)
-- Seven color themes: muted, colorful, RGB, neon, fire, matrix, ocean
+- Ten visualizer modes: frequency bars, waveform lines, radial, spectrogram,
+  particle field, nova, matrix rain, terminal (a scrolling bash-style frequency
+  display framed as `tail -f` on an audio log, with an easter egg system — fake
+  shell commands, movie quotes, ASCII art), and two feedback modes: wormhole (a
+  reactive tunnel) and cascade (a crystalline spiral mandala)
+- Eight color themes: muted, colorful, RGB, neon, fire, matrix, ocean, alpine
+- Trails: an optional frame-persistence modifier for the visualizer (G)
 - Custom transport controls (play/pause, seek, volume, speed, fullscreen)
 - Marker sidebar synced to playback position
 - Now-playing strip with previous/current/next marker pills
@@ -200,7 +202,7 @@ Click any media item to open the player. Features include:
 - Inline marker editing (label and timestamp) and deletion
 - Marker text import (paste a tracklist)
 - Marker export to clipboard
-- Keyboard shortcuts: Space (play/pause), ←/→ (±5s), ↑/↓ (volume), M (mute), F (fullscreen), V (cycle viz mode), T (cycle theme)
+- Keyboard shortcuts: Space (play/pause), ←/→ (±5s), ↑/↓ (volume), M (mute), F (fullscreen), V (cycle viz mode), T (cycle theme), G (toggle Trails)
 
 ## Security Model
 
