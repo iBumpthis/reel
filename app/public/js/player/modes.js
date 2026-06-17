@@ -4,6 +4,7 @@
  * fullscreen viz controls, keyboard cycling, randomizer.
  */
 import { ensureAudioContext, resumeAudioContext, startViz, stopViz, initVisualizer, VIZ_STYLES, THEME_NAMES } from './visualizer.js';
+import { toast } from '../shared/utils.js';
 
 let state, els;
 
@@ -17,6 +18,9 @@ const modeBtns = document.querySelectorAll('.mode-btn');
 // because they share the same class names.
 const vizStyleBtns = document.querySelectorAll('.viz-style-btn');
 const themeBtns = document.querySelectorAll('.theme-btn');
+// Modifier toggles (currently just Trails). Like the selectors above, this
+// captures both the main toolbar and the fullscreen bar.
+const vizModBtns = document.querySelectorAll('.viz-mod-btn');
 
 // Fullscreen viz bar element
 const elFsVizBar = document.getElementById('fsVizBar');
@@ -68,11 +72,33 @@ function setTheme(theme) {
 function applyVizHighlights() {
   vizStyleBtns.forEach(b => b.classList.toggle('active', b.dataset.style === state.vizStyle));
   themeBtns.forEach(b => b.classList.toggle('active', b.dataset.theme === state.currentTheme));
+  applyModHighlights();
 }
 
 function clearVizHighlights() {
   vizStyleBtns.forEach(b => b.classList.remove('active'));
   themeBtns.forEach(b => b.classList.remove('active'));
+  vizModBtns.forEach(b => b.classList.remove('active'));
+}
+
+// Modifier highlight reflects live modifier state (only Trails today).
+// Like the viz/theme highlights it is only painted while the visualizer is
+// the active mode; setMode applies it on entry and clears it on leaving.
+function applyModHighlights() {
+  vizModBtns.forEach(b => {
+    if (b.dataset.mod === 'trails') b.classList.toggle('active', !!state.trails);
+  });
+}
+
+// Single source of truth for the Trails modifier. Both the keyboard 'g'
+// shortcut (index.js) and the modifiers button route through this, so the
+// flag, the button highlight, and the toast never drift apart. The button
+// highlight only has a visible effect in visualizer mode, but the flag is a
+// persistent pref so the toggle itself is mode-agnostic.
+export function toggleTrails() {
+  state.trails = !state.trails;
+  applyModHighlights();
+  toast(`Trails ${state.trails ? 'on' : 'off'}`);
 }
 
 // ============================================================
@@ -192,6 +218,16 @@ export function initModes(_state, _els, defaultMode) {
   // Theme buttons (both main toolbar and fullscreen bar)
   themeBtns.forEach(btn => {
     btn.addEventListener('click', () => setTheme(btn.dataset.theme));
+  });
+
+  // Modifier toggles (both main toolbar and fullscreen bar). Like the viz
+  // style buttons, clicking one from another mode enters the visualizer
+  // first so the modifier has a visible effect.
+  vizModBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (state.currentMode !== 'visualizer') setMode('visualizer');
+      if (btn.dataset.mod === 'trails') toggleTrails();
+    });
   });
 
   // Markers panel collapse toggle
