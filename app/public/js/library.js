@@ -559,11 +559,12 @@ elScanBtn.addEventListener('click', async () => {
     const result = await api.scan();
     const parts = [];
     if (result.totalUpserts > 0) parts.push(`${result.totalUpserts} found`);
-    if (result.totalDeletes > 0) parts.push(`${result.totalDeletes} removed`);
+    if (result.totalReactivated > 0) parts.push(`${result.totalReactivated} restored`);
+    if (result.totalMissing > 0) parts.push(`${result.totalMissing} missing`);
     const msg = parts.length > 0 ? parts.join(', ') : 'No changes';
     elScanStatus.textContent = msg;
     if (result.skippedLibraries?.length) {
-      toast(`Library unavailable, nothing removed: ${result.skippedLibraries.join(', ')}`, 'error');
+      toast(`Library unavailable, nothing marked missing: ${result.skippedLibraries.join(', ')}`, 'error');
     } else {
       toast(`Scan complete: ${msg}`, 'success');
     }

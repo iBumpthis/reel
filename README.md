@@ -140,9 +140,11 @@ are used when present, with `parseFilename()` as the fallback.
 
 Embedded tags are read only when a file is first added to the database.
 Subsequent scans skip the tag read for files that already exist, since the
-scanner's upsert does not overwrite metadata fields for existing rows. If you
-re-encode a file at the same path, delete its database row and re-scan (or
-edit the metadata manually) to pick up the new embedded tags.
+scanner's upsert does not overwrite metadata fields for existing rows. To pick
+up new embedded tags after re-encoding a file at the same path, edit the
+metadata manually, or use a Full Metadata Scan (forced tag re-read, planned
+maintenance action) — do **not** delete the database row, which would cascade
+away that file's markers and tags.
 
 Video files continue using filename parsing only (concert recordings rarely
 have meaningful embedded metadata).
@@ -318,33 +320,44 @@ your paths.
 
 ## Scanner Behavior
 
-### Stale File Deletion
+### Missing File Handling (Soft-Delete)
 
-When a scan runs, files that were previously indexed but no longer exist on
-disk are removed from the database. This deletion is scoped per library and
-includes safety guards:
+When a scan runs, files that were previously indexed but are no longer seen on
+disk are **marked missing** (`present = 0`), not deleted. Their markers, tags,
+and hand-entered metadata are retained — the `ON DELETE CASCADE` on markers and
+tags never fires on a disappearance. Missing items are hidden from normal
+browse, search, and tag/artist counts, and streaming one returns `410 Gone`.
+
+This is the durability guarantee: a renamed, moved, or temporarily-unmounted
+file can never silently destroy the irreplaceable data you attached to it. A
+file that reappears at the **same path** auto-reactivates (`present` flips back
+to 1) on the next scan, so transient unmounts self-heal.
+
+Marking-missing is scoped per library and carries the same safety guards as
+before:
 
 - If a library's filesystem walk **fails** (mount down) or hits **one or more
   unreadable directories** (permission change, transient I/O, a directory that
-  vanished mid-walk), no rows are deleted from that library. The walk still
+  vanished mid-walk), no rows in that library are marked missing. The walk still
   ingests every directory it *can* read — a single unreadable subfolder no
-  longer aborts the whole library — but stale-delete is suppressed so a partial
-  read can never delete rows that were merely unreadable this pass. The scan
-  response includes the library name in `skippedLibraries` (and a `walkErrors`
-  count), and the UI shows an error toast:
-  *"Library unavailable, nothing removed: [name]"*.
+  longer aborts the whole library — but mark-missing is suppressed so a partial
+  read can't hide rows that were merely unreadable this pass. The scan response
+  includes the library name in `skippedLibraries` (and a `walkErrors` count),
+  and the UI shows an error toast.
 
 - If a library's walk returns **zero files** but the database has existing rows
-  for it (mounted-but-empty, e.g. wrong volume path), deletion is also skipped.
+  for it (mounted-but-empty, e.g. wrong volume path), mark-missing is also
+  skipped.
 
-This prevents a transient mount or permission failure from cascading into
-deletion of all media rows for a library — which would also destroy all markers
-and tag associations via `ON DELETE CASCADE`.
+The scan response reports `totalUpserts`, `totalMissing` (newly marked), and
+`totalReactivated`.
 
-**Intentional asymmetry:** if you genuinely empty a library's directory, the
-guard blocks cleanup — stale rows persist until at least one media file exists
-in the library or the library is removed from config. The bias is deliberate:
-Reel never auto-wipes an entire library.
+**Purging missing items.** Retained orphans accumulate harmlessly until you
+explicitly remove them. `GET /api/scan/missing` returns the orphan count;
+`POST /api/scan/purge-missing` permanently deletes all `present = 0` rows (this
+is the one path that *does* cascade away markers and tags). This is deliberate
+and user-initiated only — Reel never auto-deletes media data. A two-click
+confirm UI for purge lands with the Settings menu.
 
 ### Symlinks
 
@@ -433,11 +446,13 @@ with appropriate HTTP status codes.
 | GET | `/api/tags` | All tags with usage counts |
 | GET | `/api/artists` | All artists with media counts |
 | POST | `/api/media/:id/tags` | Replace tags for a media item |
-| POST | `/api/scan` | Trigger library scan |
+| POST | `/api/scan` | Trigger library scan (`{ ok, totalUpserts, totalMissing, totalReactivated, … }`) |
+| GET | `/api/scan/missing` | Count of retained-but-missing rows (`{ count }`) |
+| POST | `/api/scan/purge-missing` | Permanently delete all missing rows (cascades markers + tags) — `{ ok, purged }` |
 | POST | `/api/import` | Bulk metadata import (CSV or JSON) |
 | POST | `/api/import/markers` | Bulk marker import (CSV or JSON, replace-all per media item) |
 | GET | `/api/export` | Full metadata export (`?format=json\|csv\|markers-csv`, `?lib=name`) |
-| GET/HEAD | `/stream/:id` | Range-based media streaming |
+| GET/HEAD | `/stream/:id` | Range-based media streaming (`410 Gone` if the file is missing) |
 
 ### Library Query Parameters
 
@@ -453,6 +468,7 @@ with appropriate HTTP status codes.
 | `order` | `asc` or `desc` (default: `desc`) |
 | `limit` | Page size, 1–200 (default: 50) |
 | `cursor` | Opaque pagination token from `nextCursor` |
+| `missing` | `only` (orphans only) or `include` (show missing too); default hides missing |
 
 ## Browser Compatibility
 

@@ -2,9 +2,11 @@ export default async function tagRoutes(fastify) {
   const db = fastify.db;
 
   const allTags = db.prepare(`
-    SELECT t.id, t.name, COUNT(mt.media_id) AS count
+    SELECT t.id, t.name,
+           COUNT(CASE WHEN m.present = 1 THEN 1 END) AS count
     FROM tags t
     LEFT JOIN media_tags mt ON mt.tag_id = t.id
+    LEFT JOIN media m ON m.id = mt.media_id
     GROUP BY t.id
     ORDER BY t.name ASC
   `);
@@ -31,7 +33,7 @@ export default async function tagRoutes(fastify) {
   const allArtists = db.prepare(`
     SELECT artist AS name, COUNT(*) AS count
     FROM media
-    WHERE artist IS NOT NULL AND artist != ''
+    WHERE artist IS NOT NULL AND artist != '' AND present = 1
     GROUP BY artist
     ORDER BY artist ASC
   `);

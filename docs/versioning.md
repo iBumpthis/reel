@@ -493,9 +493,91 @@ changes.
   reuses the line renderer with a vertical offset.
 - **Module header** themes comment updated to include `alpine` (was stale).
 
+### v1.10.0 — Data Durability: Soft-Delete (Orphan Retention)
+
+Opens the Data Durability phase. Stage 1 of a multi-stage track; backend +
+schema + one frontend toast string. The first deferred *feature*-track item
+(metadata/marker durability), prioritized because it's the only one whose
+failure mode is permanent loss rather than a missing nicety.
+
+The bug it fixes: media identity was the absolute path (`abs_path UNIQUE`), and
+`markers` + `media_tags` both `ON DELETE CASCADE` off `media(id)`. The scanner
+HARD-deleted any row whose file wasn't seen on a pass. So a single rename/move
+of a file between scans silently destroyed that file's markers, tags, and
+hand-entered metadata — and none of the existing mount-down guards tripped,
+because a healthy library that walks files normally looks exactly like one
+where a file was renamed. Export/import existed as disaster recovery, but it's
+manual and matches on `rel_path`/`filename`, so it couldn't even repair a
+rename after the fact.
+
+- **Migration 004 — `present` / `missing_since` columns.** `present INTEGER NOT
+  NULL DEFAULT 1` (existing rows backfill to present), `missing_since TEXT`
+  (set once on first disappearance, cleared on return). Partial index on the
+  rare `present = 0` rows for the maintenance/purge view.
+- **Scanner — mark-missing instead of delete.** The stale step is now
+  `UPDATE … SET present = 0` instead of `DELETE`. The cascade never fires;
+  markers/tags/metadata are retained. The per-library mount-down guards (walk
+  error / zero-files-with-existing-rows / scan error) still gate it, now to
+  avoid hiding a whole library on a transient failure.
+- **Scanner — same-path reactivation.** A missing file seen again at the same
+  `abs_path` flips back to `present = 1`, `missing_since = NULL` via the
+  upsert's `ON CONFLICT` clause. Transient unmounts and vanished-mid-walk files
+  self-heal on the next clean scan. Scan now reports `totalMissing` /
+  `totalReactivated` (replacing `totalDeletes`, which is no longer possible
+  from a scan).
+- **Read-path filtering.** `/api/library` browse/search/count filter
+  `present = 1` by default; a new `missing` query param (`only` / `include`)
+  exposes orphans for the maintenance view. `/stream/:id` returns **410 Gone**
+  for a missing file. `/api/tags` and `/api/artists` counts exclude missing
+  rows so badges match what browsing shows. Media detail now carries
+  `present` / `missingSince`.
+- **FTS note.** `present` is a non-indexed column, so flipping it fires no
+  trigger — a missing row STAYS in the FTS index and is hidden from search by
+  the query's `present = 1` predicate, not by index mutation. A purge fires the
+  delete trigger and removes it normally. The index always mirrors non-purged
+  rows.
+- **Purge endpoint (backend only this release).** `GET /api/scan/missing`
+  returns the orphan count; `POST /api/scan/purge-missing` hard-deletes
+  `present = 0` rows (the one deliberate, user-initiated cascade), gated against
+  a concurrent scan. The two-click confirm UI lands with the Settings menu
+  (next).
+- **Tests.** New `app/test/soft-delete.test.js` — DB-backed (real migrations
+  001–004 in-memory, skips without better-sqlite3) — locks retention, purge
+  cascade, reactivation, idempotent mark-missing, and the FTS retain/filter
+  behavior.
+
+Interim gap (by design): a rename leaves a retained orphan (old path, all data,
+marked missing) plus a fresh empty row (new path). No data is lost, but
+reconciling them is manual until Stage 2. See Planned.
+
 ---
 
 ## Planned
+
+### Data Durability (continued, post-1.10.0)
+
+- **Stage 2 — content fingerprint + auto-relink.** Make rename/move transparent
+  instead of "safe but manual." A stable, path-independent fingerprint (size +
+  mtime + a partial head/tail hash — NOT a full-file hash, given CIFS cost) lets
+  the next scan auto-merge a `present = 0` orphan whose file resurfaced at a new
+  path, rather than leaving an orphan + an empty new row. Depends on 1.10.0's
+  retention (there must be an orphan to relink to). Carries real design surface
+  — fingerprint cost over CIFS, and collision/ambiguity handling when two
+  missing files could match one new path — which is why it's split out of the
+  safety fix.
+- **Settings menu + purge UI.** A first server-settings surface in the app.
+  Houses the **Purge Missing** action behind a two-click confirm ("Confirm? X
+  items will be removed") — deliberately NOT next to Scan on the main page,
+  where the adjacency invites accidents. Backend (`/api/scan/missing`,
+  `/api/scan/purge-missing`) already shipped in 1.10.0.
+- **Full Metadata Scan.** A forced embedded-tag re-read for EXISTING files
+  (the normal scan skips them — it only tag-reads new files, which is already
+  the light path), updating metadata in place WITHOUT deleting the row. The
+  non-destructive replacement for the old "delete the row and re-scan to refresh
+  tags" footgun. A flag on the existing scanner, not a second scan engine.
+  Belongs in the Settings "maintenance" section alongside Purge — both are
+  heavier, deliberate, user-initiated operations that don't belong on the hot
+  path.
 
 ### Visualizer polish (post-1.9.3)
 

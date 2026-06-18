@@ -19,8 +19,8 @@ const TAG_READABLE = new Set([
  * or a directory that vanished mid-walk) is counted in counters.walkErrors
  * and skipped rather than aborting the whole library walk. scanLibraries
  * treats a non-zero per-library walkError count the same as a hard failure
- * for stale-delete purposes, so a partial read can never trigger deletion
- * of rows that were simply unreadable this pass.
+ * for mark-missing purposes, so a partial read can never flag rows missing
+ * that were simply unreadable this pass.
  *
  * Cycle safety: a symlinked directory is only recursed into after resolving
  * its real path and checking it against `visited`. A symlink pointing at an
@@ -76,28 +76,39 @@ async function* walkDir(dir, counters, visited) {
 /**
  * Scan all configured libraries and upsert media records.
  *
- * Stale deletion is scoped PER LIBRARY and is skipped for any library that:
+ * Stale handling is SOFT-DELETE (migration 004): a row whose file was not
+ * seen this pass is MARKED missing (present = 0, missing_since set), never
+ * hard-deleted. The ON DELETE CASCADE on markers/media_tags therefore never
+ * fires on a disappearance, and the user-editable metadata columns survive
+ * with the row. A file that reappears at the SAME abs_path auto-reactivates
+ * (present = 1, missing_since = NULL) via the upsert's ON CONFLICT clause.
+ * Actual row deletion happens ONLY through the explicit "purge missing"
+ * maintenance action — never automatically here.
+ *
+ * The mark-missing step is still scoped PER LIBRARY and skipped for any
+ * library that:
  *   a) threw during its walk (unexpected error not handled inside walkDir), or
  *   b) hit one or more unreadable directories during its walk (permission
  *      change, transient I/O, vanished mid-walk — counted in walkErrors), or
  *   c) walked zero media files while the DB has existing rows for it
  *      (mounted-but-empty, e.g. wrong volume path).
- * This prevents a transient mount/permission failure from cascading into
- * deletion of all media rows — and with them, all markers and tag links
- * (ON DELETE CASCADE). The walk still ingests every directory it CAN read;
- * only the stale-delete step is suppressed when the read was incomplete.
+ * This prevents a transient mount/permission failure from flagging an entire
+ * library's rows missing (which would hide everything from the UI until the
+ * next clean scan). The walk still ingests every directory it CAN read; only
+ * the mark-missing step is suppressed when the read was incomplete.
  *
  * Tag-read optimization (v1.4): embedded tag reading via music-metadata is
  * skipped for files that already exist in the DB. The upsert's ON CONFLICT
  * clause only updates size/mtime/scan tracking — it does not overwrite
  * title/artist/year/album/track_number. So tag reads for existing files are
  * pure I/O waste; the results would be discarded by the upsert. If a file
- * is re-encoded at the same path, the user should delete the DB row and
- * re-scan (or edit metadata manually) to pick up new embedded tags.
+ * is re-encoded at the same path, a Full Metadata Scan (forced tag re-read,
+ * planned maintenance action) should be used to pick up new embedded tags —
+ * NOT row deletion, which would cascade away the file's markers and tags.
  *
  * @param {object} config - app config with libraries and allowedExtensions
  * @param {import('better-sqlite3').Database} db
- * @returns {Promise<{ scanId: number, totalUpserts: number, totalDeletes: number, skippedLibraries: string[], brokenSymlinks: number }>}
+ * @returns {Promise<{ scanId: number, totalUpserts: number, totalMissing: number, totalReactivated: number, skippedLibraries: string[], brokenSymlinks: number }>}
  */
 export async function scanLibraries(config, db) {
   const allowedSet = new Set(config.allowedExtensions);
@@ -124,20 +135,27 @@ export async function scanLibraries(config, db) {
       size_bytes = @size_bytes,
       mtime_ms = @mtime_ms,
       last_seen_scan = @last_seen_scan,
+      -- Reactivate: a previously-missing file seen again at the SAME path is
+      -- live again, with all its retained markers/tags/metadata intact.
+      present = 1,
+      missing_since = NULL,
       updated_at = datetime('now')
   `);
-  const deleteStaleForLibrary = db.prepare(
-    'DELETE FROM media WHERE library_id = ? AND last_seen_scan < ?'
+  const markMissingForLibrary = db.prepare(
+    `UPDATE media SET present = 0,
+                      missing_since = COALESCE(missing_since, datetime('now'))
+     WHERE library_id = ? AND last_seen_scan < ? AND present = 1`
   );
 
   // Auto-tag prepared statements
   const findTag = db.prepare('SELECT id FROM tags WHERE normalized = ?');
   const insertTag = db.prepare('INSERT INTO tags (name, normalized) VALUES (@name, @normalized)');
   const linkTag = db.prepare('INSERT OR IGNORE INTO media_tags (media_id, tag_id) VALUES (@media_id, @tag_id)');
-  const getMediaByPath = db.prepare('SELECT id FROM media WHERE abs_path = ?');
+  const getMediaByPath = db.prepare('SELECT id, present FROM media WHERE abs_path = ?');
 
   let totalUpserts = 0;
-  let totalDeletes = 0;
+  let totalMissing = 0;
+  let totalReactivated = 0;
   let tagReadsSkipped = 0;
   const skippedLibraries = [];
   const counters = { brokenSymlinks: 0, walkErrors: 0 };
@@ -172,7 +190,7 @@ export async function scanLibraries(config, db) {
       visited.add(await realpath(lib.path));
     } catch {
       // Root unresolvable (mount down) — walkDir's readdir will fail and be
-      // counted, which suppresses stale-delete below. Nothing to seed.
+      // counted, which suppresses mark-missing below. Nothing to seed.
     }
 
     try {
@@ -199,6 +217,10 @@ export async function scanLibraries(config, db) {
         // ON CONFLICT clause doesn't update metadata fields, so the read result
         // would be discarded anyway.
         const existingMedia = getMediaByPath.get(absPath);
+
+        // A previously-missing row about to be re-upserted at the same path is
+        // a reactivation (the ON CONFLICT clause flips present back to 1).
+        if (existingMedia && existingMedia.present === 0) totalReactivated++;
 
         // ID3 tag reading for NEW audio files only — fall back to parseFilename
         let artist = parsed.artist;
@@ -276,9 +298,10 @@ export async function scanLibraries(config, db) {
 
     totalUpserts += libUpserts;
 
-    // Stale-delete safety: never delete from a library whose walk failed,
-    // that hit unreadable directories this pass, or that returned zero files
-    // when the DB previously had rows for it.
+    // Mark-missing safety: never flag rows missing in a library whose walk
+    // failed, that hit unreadable directories this pass, or that returned zero
+    // files when the DB previously had rows for it. (A transient failure must
+    // not hide a whole library from the UI.)
     const libWalkErrors = counters.walkErrors - errorsBefore;
     const existingCount = countMedia.get(libraryId).n;
     if (walkFailed || libWalkErrors > 0 || (libUpserts === 0 && existingCount > 0)) {
@@ -288,12 +311,12 @@ export async function scanLibraries(config, db) {
         : libWalkErrors > 0
           ? `${libWalkErrors} unreadable dir(s)`
           : `0 files walked, ${existingCount} rows in DB`;
-      console.warn(`[reel] Skipping stale-delete for library "${lib.name}" (${reason})`);
+      console.warn(`[reel] Skipping mark-missing for library "${lib.name}" (${reason})`);
       continue;
     }
 
-    const result = deleteStaleForLibrary.run(libraryId, scanId);
-    totalDeletes += result.changes;
+    const result = markMissingForLibrary.run(libraryId, scanId);
+    totalMissing += result.changes;
   }
 
   if (counters.brokenSymlinks > 0) {
@@ -309,13 +332,16 @@ export async function scanLibraries(config, db) {
   }
 
   // FTS index stays in sync via the media_fts_ai/ad/au triggers (migration
-  // 003). New files fire AFTER INSERT; stale deletes fire AFTER DELETE; the
-  // WHEN-gated AFTER UPDATE means a no-op re-scan (only size/mtime/scan
-  // re-set, filename unchanged) does no FTS work. No full rebuild needed.
+  // 003). New files fire AFTER INSERT; the WHEN-gated AFTER UPDATE means a
+  // no-op re-scan (only size/mtime/scan re-set, filename unchanged) does no
+  // FTS work. Soft-delete (present = 0) is an UPDATE on a NON-indexed column,
+  // so it fires NO trigger — missing rows stay in the FTS index and are hidden
+  // from search by the library query's `present = 1` predicate instead. Only a
+  // purge (hard DELETE) fires AFTER DELETE and removes the row from the index.
 
-  console.log(`[reel] Scan complete: ${totalUpserts} upserted, ${totalDeletes} deleted` +
-    (skippedLibraries.length ? `, stale-delete skipped for: ${skippedLibraries.join(', ')}` : ''));
-  return { scanId, totalUpserts, totalDeletes, skippedLibraries, brokenSymlinks: counters.brokenSymlinks, walkErrors: counters.walkErrors };
+  console.log(`[reel] Scan complete: ${totalUpserts} upserted, ${totalMissing} marked missing, ${totalReactivated} reactivated` +
+    (skippedLibraries.length ? `, mark-missing skipped for: ${skippedLibraries.join(', ')}` : ''));
+  return { scanId, totalUpserts, totalMissing, totalReactivated, skippedLibraries, brokenSymlinks: counters.brokenSymlinks, walkErrors: counters.walkErrors };
 }
 
 /**

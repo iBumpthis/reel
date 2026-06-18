@@ -101,7 +101,7 @@ export function setMediaTags(id, tags) {
   });
 }
 
-/** POST /api/scan → { ok, totalUpserts, totalDeletes } */
+/** POST /api/scan → { ok, totalUpserts, totalMissing, totalReactivated } */
 export function scan() {
   return request('/api/scan', { method: 'POST' });
 }
