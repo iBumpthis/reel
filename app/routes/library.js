@@ -52,7 +52,7 @@ export default async function libraryRoutes(fastify) {
 
   fastify.get('/api/library', async (request, reply) => {
     const {
-      lib, type, ext, tag, q, artist,
+      lib, type, ext, tag, q, artist, missing,
       sort = 'mtime',
       order = 'desc',
       limit: rawLimit = '50',
@@ -73,6 +73,16 @@ export default async function libraryRoutes(fastify) {
     // Build WHERE clauses
     const conditions = [];
     const params = {};
+
+    // Presence filter (soft-delete, migration 004). Rows whose files have gone
+    // missing are RETAINED but hidden from normal browse/search by default.
+    // `missing=only` powers the maintenance / purge-confirm view; `include`
+    // shows both. Added first so it propagates into the totalCount query too.
+    if (missing === 'only') {
+      conditions.push('m.present = 0');
+    } else if (missing !== 'include') {
+      conditions.push('m.present = 1');
+    }
 
     if (lib) {
       conditions.push('l.name = @lib');
@@ -142,6 +152,7 @@ export default async function libraryRoutes(fastify) {
       SELECT m.id, m.library_id, l.name AS library_name, m.filename, m.ext,
              m.media_type, m.size_bytes, m.mtime_ms,
              m.title, m.artist, m.year, m.album, m.description,
+             m.present, m.missing_since,
              m.created_at, m.updated_at,
              ${sortColumn} AS sort_value,
              (SELECT COUNT(*) FROM markers mk WHERE mk.media_id = m.id) AS marker_count
@@ -206,6 +217,8 @@ export default async function libraryRoutes(fastify) {
         description: row.description,
         tags: tagMap[row.id] ?? [],
         markerCount: row.marker_count,
+        present: !!row.present,
+        missingSince: row.missing_since,
       };
     });
 

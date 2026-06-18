@@ -64,6 +64,8 @@ export default async function mediaRoutes(fastify) {
       tags,
       streamUrl: `/stream/${row.id}`,
       defaultPlaybackMode: row.media_type === 'audio' ? 'audio' : 'video',
+      present: !!row.present,
+      missingSince: row.missing_since,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };

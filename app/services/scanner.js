@@ -19,8 +19,8 @@ const TAG_READABLE = new Set([
  * or a directory that vanished mid-walk) is counted in counters.walkErrors
  * and skipped rather than aborting the whole library walk. scanLibraries
  * treats a non-zero per-library walkError count the same as a hard failure
- * for stale-delete purposes, so a partial read can never trigger deletion
- * of rows that were simply unreadable this pass.
+ * for mark-missing purposes, so a partial read can never flag rows missing
+ * that were simply unreadable this pass.
  *
  * Cycle safety: a symlinked directory is only recursed into after resolving
  * its real path and checking it against `visited`. A symlink pointing at an
@@ -76,30 +76,50 @@ async function* walkDir(dir, counters, visited) {
 /**
  * Scan all configured libraries and upsert media records.
  *
- * Stale deletion is scoped PER LIBRARY and is skipped for any library that:
+ * Stale handling is SOFT-DELETE (migration 004): a row whose file was not
+ * seen this pass is MARKED missing (present = 0, missing_since set), never
+ * hard-deleted. The ON DELETE CASCADE on markers/media_tags therefore never
+ * fires on a disappearance, and the user-editable metadata columns survive
+ * with the row. A file that reappears at the SAME abs_path auto-reactivates
+ * (present = 1, missing_since = NULL) via the upsert's ON CONFLICT clause.
+ * Actual row deletion happens ONLY through the explicit "purge missing"
+ * maintenance action — never automatically here.
+ *
+ * The mark-missing step is still scoped PER LIBRARY and skipped for any
+ * library that:
  *   a) threw during its walk (unexpected error not handled inside walkDir), or
  *   b) hit one or more unreadable directories during its walk (permission
  *      change, transient I/O, vanished mid-walk — counted in walkErrors), or
  *   c) walked zero media files while the DB has existing rows for it
  *      (mounted-but-empty, e.g. wrong volume path).
- * This prevents a transient mount/permission failure from cascading into
- * deletion of all media rows — and with them, all markers and tag links
- * (ON DELETE CASCADE). The walk still ingests every directory it CAN read;
- * only the stale-delete step is suppressed when the read was incomplete.
+ * This prevents a transient mount/permission failure from flagging an entire
+ * library's rows missing (which would hide everything from the UI until the
+ * next clean scan). The walk still ingests every directory it CAN read; only
+ * the mark-missing step is suppressed when the read was incomplete.
  *
  * Tag-read optimization (v1.4): embedded tag reading via music-metadata is
  * skipped for files that already exist in the DB. The upsert's ON CONFLICT
  * clause only updates size/mtime/scan tracking — it does not overwrite
  * title/artist/year/album/track_number. So tag reads for existing files are
  * pure I/O waste; the results would be discarded by the upsert. If a file
- * is re-encoded at the same path, the user should delete the DB row and
- * re-scan (or edit metadata manually) to pick up new embedded tags.
+ * is re-encoded at the same path, a Full Metadata Scan (forced tag re-read,
+ * planned maintenance action) should be used to pick up new embedded tags —
+ * NOT row deletion, which would cascade away the file's markers and tags.
  *
  * @param {object} config - app config with libraries and allowedExtensions
  * @param {import('better-sqlite3').Database} db
- * @returns {Promise<{ scanId: number, totalUpserts: number, totalDeletes: number, skippedLibraries: string[], brokenSymlinks: number }>}
+ * @param {object} [options]
+ * @param {boolean} [options.forceTagReread=false] - Full Metadata Scan: also
+ *   re-read embedded tags for existing audio files and refresh their metadata
+ *   columns (COALESCE — present tags only; markers/tags/description untouched).
+ * @returns {Promise<{ scanId: number, totalUpserts: number, totalMissing: number, totalReactivated: number, totalMetaUpdated: number, skippedLibraries: string[], brokenSymlinks: number }>}
  */
-export async function scanLibraries(config, db) {
+export async function scanLibraries(config, db, options = {}) {
+  // forceTagReread (Full Metadata Scan): re-read embedded tags for EXISTING
+  // audio files too — normally skipped as I/O waste — and route them through
+  // an upsert variant that refreshes metadata columns on conflict. See the
+  // upsertMediaForceMeta statement and the tag-read block below.
+  const { forceTagReread = false } = options;
   const allowedSet = new Set(config.allowedExtensions);
   const globalAutoTagDepth = config.autoTagDepth || 0;
   const globalAutoTagExclude = new Set((config.autoTagExclude || []).map(s => s.toLowerCase()));
@@ -124,20 +144,59 @@ export async function scanLibraries(config, db) {
       size_bytes = @size_bytes,
       mtime_ms = @mtime_ms,
       last_seen_scan = @last_seen_scan,
+      -- Reactivate: a previously-missing file seen again at the SAME path is
+      -- live again, with all its retained markers/tags/metadata intact.
+      present = 1,
+      missing_since = NULL,
       updated_at = datetime('now')
   `);
-  const deleteStaleForLibrary = db.prepare(
-    'DELETE FROM media WHERE library_id = ? AND last_seen_scan < ?'
+  const markMissingForLibrary = db.prepare(
+    `UPDATE media SET present = 0,
+                      missing_since = COALESCE(missing_since, datetime('now'))
+     WHERE library_id = ? AND last_seen_scan < ? AND present = 1`
   );
+
+  // Full Metadata Scan upsert variant. Identical to upsertMedia for the INSERT
+  // (new file) path, but its ON CONFLICT clause ALSO refreshes the embedded-
+  // tag-derived metadata columns. Each refresh column is COALESCE(@meta_x, x):
+  // the new value wins ONLY when the file actually carries that tag, otherwise
+  // the existing (possibly hand-edited) value is preserved — an absent or
+  // unreadable tag never clobbers good data with NULL or a filename guess.
+  // `description`, markers, and tag links are deliberately untouched: they are
+  // not embedded-tag-derived and must survive a metadata refresh.
+  const upsertMediaForceMeta = db.prepare(`
+    INSERT INTO media (library_id, abs_path, rel_path, filename, ext, media_type,
+                       size_bytes, mtime_ms, title, artist, year, album, track_number,
+                       last_seen_scan)
+    VALUES (@library_id, @abs_path, @rel_path, @filename, @ext, @media_type,
+            @size_bytes, @mtime_ms, @title, @artist, @year, @album, @track_number,
+            @last_seen_scan)
+    ON CONFLICT(abs_path) DO UPDATE SET
+      rel_path = @rel_path,
+      filename = @filename,
+      size_bytes = @size_bytes,
+      mtime_ms = @mtime_ms,
+      last_seen_scan = @last_seen_scan,
+      present = 1,
+      missing_since = NULL,
+      title = COALESCE(@meta_title, title),
+      artist = COALESCE(@meta_artist, artist),
+      year = COALESCE(@meta_year, year),
+      album = COALESCE(@meta_album, album),
+      track_number = COALESCE(@meta_track_number, track_number),
+      updated_at = datetime('now')
+  `);
 
   // Auto-tag prepared statements
   const findTag = db.prepare('SELECT id FROM tags WHERE normalized = ?');
   const insertTag = db.prepare('INSERT INTO tags (name, normalized) VALUES (@name, @normalized)');
   const linkTag = db.prepare('INSERT OR IGNORE INTO media_tags (media_id, tag_id) VALUES (@media_id, @tag_id)');
-  const getMediaByPath = db.prepare('SELECT id FROM media WHERE abs_path = ?');
+  const getMediaByPath = db.prepare('SELECT id, present FROM media WHERE abs_path = ?');
 
   let totalUpserts = 0;
-  let totalDeletes = 0;
+  let totalMissing = 0;
+  let totalReactivated = 0;
+  let totalMetaUpdated = 0;
   let tagReadsSkipped = 0;
   const skippedLibraries = [];
   const counters = { brokenSymlinks: 0, walkErrors: 0 };
@@ -172,7 +231,7 @@ export async function scanLibraries(config, db) {
       visited.add(await realpath(lib.path));
     } catch {
       // Root unresolvable (mount down) — walkDir's readdir will fail and be
-      // counted, which suppresses stale-delete below. Nothing to seed.
+      // counted, which suppresses mark-missing below. Nothing to seed.
     }
 
     try {
@@ -200,30 +259,51 @@ export async function scanLibraries(config, db) {
         // would be discarded anyway.
         const existingMedia = getMediaByPath.get(absPath);
 
-        // ID3 tag reading for NEW audio files only — fall back to parseFilename
-        let artist = parsed.artist;
-        let title = parsed.title;
-        let year = parsed.year;
-        let album = null;
-        let trackNumber = null;
+        // A previously-missing row about to be re-upserted at the same path is
+        // a reactivation (the ON CONFLICT clause flips present back to 1).
+        if (existingMedia && existingMedia.present === 0) totalReactivated++;
 
-        if (mediaType === 'audio' && TAG_READABLE.has(ext) && !existingMedia) {
+        // Embedded-tag read. Normally done for NEW audio files only — the
+        // normal upsert's ON CONFLICT clause doesn't touch metadata columns,
+        // so re-reading an existing file's tags would be pure I/O waste (the
+        // one real CIFS read cost). Full Metadata Scan (forceTagReread) opts
+        // existing files back in: read their tags AND route through the
+        // metadata-refreshing upsert variant below.
+        const wantTagRead = mediaType === 'audio' && TAG_READABLE.has(ext)
+          && (!existingMedia || forceTagReread);
+
+        // Embedded values, NULL when the tag is absent/empty or the read fails.
+        // Kept separate from the parseFilename fallback so the force upsert can
+        // COALESCE — overwriting only fields the file actually carries. The
+        // `|| null` (not `??`) preserves the original new-file behavior exactly:
+        // empty-string / zero tags collapse to null and fall back, same as the
+        // prior `if (c.field)` truthy guards.
+        let embArtist = null, embTitle = null, embYear = null, embAlbum = null, embTrack = null;
+
+        if (wantTagRead) {
           try {
             const meta = await parseFile(absPath, { skipCovers: true, duration: false });
             const c = meta.common;
-            if (c.artist) artist = c.artist;
-            if (c.title) title = c.title;
-            if (c.album) album = c.album;
-            if (c.year) year = c.year;
-            if (c.track?.no) trackNumber = c.track.no;
+            embArtist = c.artist || null;
+            embTitle = c.title || null;
+            embAlbum = c.album || null;
+            embYear = c.year || null;
+            embTrack = c.track?.no || null;
           } catch {
-            // Tag read failed — use parseFilename values (already set above)
+            // Tag read failed — embedded values stay null (fallbacks apply)
           }
         } else if (mediaType === 'audio' && TAG_READABLE.has(ext) && existingMedia) {
           tagReadsSkipped++;
         }
 
-        upsertMedia.run({
+        // INSERT values (new file): embedded tag wins, else parseFilename.
+        const artist = embArtist || parsed.artist;
+        const title = embTitle || parsed.title;
+        const year = embYear || parsed.year;
+        const album = embAlbum;
+        const trackNumber = embTrack;
+
+        const base = {
           library_id: libraryId,
           abs_path: absPath,
           rel_path: relPath,
@@ -238,7 +318,22 @@ export async function scanLibraries(config, db) {
           album,
           track_number: trackNumber,
           last_seen_scan: scanId,
-        });
+        };
+
+        if (existingMedia && forceTagReread) {
+          // Metadata-refresh path: COALESCE-update from embedded tags only.
+          upsertMediaForceMeta.run({
+            ...base,
+            meta_title: embTitle,
+            meta_artist: embArtist,
+            meta_year: embYear,
+            meta_album: embAlbum,
+            meta_track_number: embTrack,
+          });
+          totalMetaUpdated++;
+        } else {
+          upsertMedia.run(base);
+        }
 
         // Get the media ID for tagging (re-query since upsert may have inserted)
         const mediaRow = existingMedia || getMediaByPath.get(absPath);
@@ -276,9 +371,10 @@ export async function scanLibraries(config, db) {
 
     totalUpserts += libUpserts;
 
-    // Stale-delete safety: never delete from a library whose walk failed,
-    // that hit unreadable directories this pass, or that returned zero files
-    // when the DB previously had rows for it.
+    // Mark-missing safety: never flag rows missing in a library whose walk
+    // failed, that hit unreadable directories this pass, or that returned zero
+    // files when the DB previously had rows for it. (A transient failure must
+    // not hide a whole library from the UI.)
     const libWalkErrors = counters.walkErrors - errorsBefore;
     const existingCount = countMedia.get(libraryId).n;
     if (walkFailed || libWalkErrors > 0 || (libUpserts === 0 && existingCount > 0)) {
@@ -288,12 +384,12 @@ export async function scanLibraries(config, db) {
         : libWalkErrors > 0
           ? `${libWalkErrors} unreadable dir(s)`
           : `0 files walked, ${existingCount} rows in DB`;
-      console.warn(`[reel] Skipping stale-delete for library "${lib.name}" (${reason})`);
+      console.warn(`[reel] Skipping mark-missing for library "${lib.name}" (${reason})`);
       continue;
     }
 
-    const result = deleteStaleForLibrary.run(libraryId, scanId);
-    totalDeletes += result.changes;
+    const result = markMissingForLibrary.run(libraryId, scanId);
+    totalMissing += result.changes;
   }
 
   if (counters.brokenSymlinks > 0) {
@@ -309,13 +405,17 @@ export async function scanLibraries(config, db) {
   }
 
   // FTS index stays in sync via the media_fts_ai/ad/au triggers (migration
-  // 003). New files fire AFTER INSERT; stale deletes fire AFTER DELETE; the
-  // WHEN-gated AFTER UPDATE means a no-op re-scan (only size/mtime/scan
-  // re-set, filename unchanged) does no FTS work. No full rebuild needed.
+  // 003). New files fire AFTER INSERT; the WHEN-gated AFTER UPDATE means a
+  // no-op re-scan (only size/mtime/scan re-set, filename unchanged) does no
+  // FTS work. Soft-delete (present = 0) is an UPDATE on a NON-indexed column,
+  // so it fires NO trigger — missing rows stay in the FTS index and are hidden
+  // from search by the library query's `present = 1` predicate instead. Only a
+  // purge (hard DELETE) fires AFTER DELETE and removes the row from the index.
 
-  console.log(`[reel] Scan complete: ${totalUpserts} upserted, ${totalDeletes} deleted` +
-    (skippedLibraries.length ? `, stale-delete skipped for: ${skippedLibraries.join(', ')}` : ''));
-  return { scanId, totalUpserts, totalDeletes, skippedLibraries, brokenSymlinks: counters.brokenSymlinks, walkErrors: counters.walkErrors };
+  console.log(`[reel] Scan complete: ${totalUpserts} upserted, ${totalMissing} marked missing, ${totalReactivated} reactivated` +
+    (forceTagReread ? `, ${totalMetaUpdated} metadata-refreshed` : '') +
+    (skippedLibraries.length ? `, mark-missing skipped for: ${skippedLibraries.join(', ')}` : ''));
+  return { scanId, totalUpserts, totalMissing, totalReactivated, totalMetaUpdated, skippedLibraries, brokenSymlinks: counters.brokenSymlinks, walkErrors: counters.walkErrors };
 }
 
 /**

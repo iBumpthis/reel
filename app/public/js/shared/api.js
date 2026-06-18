@@ -101,9 +101,36 @@ export function setMediaTags(id, tags) {
   });
 }
 
-/** POST /api/scan → { ok, totalUpserts, totalDeletes } */
-export function scan() {
+/**
+ * POST /api/scan → { ok, totalUpserts, totalMissing, totalReactivated, ... }
+ * @param {{ fullMetadata?: boolean }} [opts] - fullMetadata runs a Full
+ *   Metadata Scan: a normal scan PLUS a forced embedded-tag re-read that
+ *   refreshes metadata columns on existing audio files. Adds totalMetaUpdated
+ *   to the response.
+ */
+export function scan(opts = {}) {
+  if (opts.fullMetadata) {
+    return request('/api/scan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fullMetadata: true }),
+    });
+  }
   return request('/api/scan', { method: 'POST' });
+}
+
+/** GET /api/scan/missing → { count } — retained-but-missing (orphan) row count. */
+export function getMissingCount() {
+  return request('/api/scan/missing');
+}
+
+/**
+ * POST /api/scan/purge-missing → { ok, purged }
+ * DESTRUCTIVE: permanently deletes all missing rows, cascading their markers
+ * and tag links. Call only behind an explicit two-click confirmation.
+ */
+export function purgeMissing() {
+  return request('/api/scan/purge-missing', { method: 'POST' });
 }
 
 /** POST /api/import → bulk metadata import */

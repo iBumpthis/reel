@@ -32,6 +32,12 @@ const elSidebarToggle = document.getElementById('sidebarToggle');
 const elSidebarLibraries = document.getElementById('sidebarLibraries');
 const elSidebarArtists = document.getElementById('sidebarArtists');
 const elSidebarTags = document.getElementById('sidebarTags');
+const elSettingsBtn = document.getElementById('settingsBtn');
+const elSettingsOverlay = document.getElementById('settingsOverlay');
+const elFullScanBtn = document.getElementById('fullScanBtn');
+const elPurgeBtn = document.getElementById('purgeBtn');
+const elViewMissingLink = document.getElementById('viewMissingLink');
+const elMissingList = document.getElementById('missingList');
 
 // ============================================================
 // State
@@ -533,18 +539,24 @@ function toggleEdit(card, item) {
 }
 
 // ============================================================
-// Scan
+// Scan — shared by the header Scan button and Full Metadata Scan
 // ============================================================
-elScanBtn.addEventListener('click', async () => {
+let scanRunning = false;
+
+async function runScan({ fullMetadata = false } = {}) {
+  if (scanRunning) return;
+  scanRunning = true;
   elScanBtn.disabled = true;
-  elScanStatus.textContent = 'Scanning...';
+  elFullScanBtn.disabled = true;
+  elScanStatus.textContent = fullMetadata ? 'Full metadata scan...' : 'Scanning...';
 
   // Show progress indicator in the grid
   const scanProgress = document.createElement('div');
   scanProgress.className = 'scan-progress';
+  const label = fullMetadata ? 'Full metadata scan' : 'Scanning libraries';
   scanProgress.innerHTML = `
     <div class="scan-spinner"></div>
-    <span>Scanning libraries<span class="scan-dots"></span></span>`;
+    <span>${label}<span class="scan-dots"></span></span>`;
   elMediaGrid.prepend(scanProgress);
 
   // Animate dots
@@ -556,16 +568,18 @@ elScanBtn.addEventListener('click', async () => {
   }, 400);
 
   try {
-    const result = await api.scan();
+    const result = await api.scan(fullMetadata ? { fullMetadata: true } : {});
     const parts = [];
     if (result.totalUpserts > 0) parts.push(`${result.totalUpserts} found`);
-    if (result.totalDeletes > 0) parts.push(`${result.totalDeletes} removed`);
+    if (result.totalReactivated > 0) parts.push(`${result.totalReactivated} restored`);
+    if (result.totalMissing > 0) parts.push(`${result.totalMissing} missing`);
+    if (fullMetadata && result.totalMetaUpdated > 0) parts.push(`${result.totalMetaUpdated} metadata refreshed`);
     const msg = parts.length > 0 ? parts.join(', ') : 'No changes';
     elScanStatus.textContent = msg;
     if (result.skippedLibraries?.length) {
-      toast(`Library unavailable, nothing removed: ${result.skippedLibraries.join(', ')}`, 'error');
+      toast(`Library unavailable, nothing marked missing: ${result.skippedLibraries.join(', ')}`, 'error');
     } else {
-      toast(`Scan complete: ${msg}`, 'success');
+      toast(`${fullMetadata ? 'Full metadata scan' : 'Scan'} complete: ${msg}`, 'success');
     }
     setTimeout(() => { elScanStatus.textContent = ''; }, 5000);
     await refreshSidebarData();
@@ -577,6 +591,115 @@ elScanBtn.addEventListener('click', async () => {
     clearInterval(dotsTimer);
     scanProgress.remove();
     elScanBtn.disabled = false;
+    elFullScanBtn.disabled = false;
+    scanRunning = false;
+  }
+}
+
+elScanBtn.addEventListener('click', () => runScan());
+
+// ============================================================
+// Settings overlay + maintenance actions
+// ============================================================
+let purgeArmed = false;
+
+function resetPurgeButton() {
+  purgeArmed = false;
+  elPurgeBtn.textContent = 'Purge Missing…';
+  elPurgeBtn.classList.remove('btn-danger-armed');
+  elPurgeBtn.disabled = false;
+}
+
+function resetSettings() {
+  resetPurgeButton();
+  elMissingList.classList.add('hidden');
+  elMissingList.innerHTML = '';
+}
+
+elSettingsBtn.addEventListener('click', () => {
+  resetSettings();
+  elSettingsOverlay.classList.remove('hidden');
+});
+
+// Full Metadata Scan — close the panel, then reuse the scan progress UI.
+elFullScanBtn.addEventListener('click', () => {
+  elSettingsOverlay.classList.add('hidden');
+  resetSettings();
+  runScan({ fullMetadata: true });
+});
+
+// Purge Missing — two-click confirm. First click arms with the LIVE count;
+// second click executes. Disarms on overlay reopen.
+elPurgeBtn.addEventListener('click', async () => {
+  if (!purgeArmed) {
+    elPurgeBtn.disabled = true;
+    try {
+      const { count } = await api.getMissingCount();
+      if (!count) {
+        toast('No missing items to purge', 'success');
+        resetPurgeButton();
+        return;
+      }
+      purgeArmed = true;
+      elPurgeBtn.textContent = `Confirm: delete ${count} item${count !== 1 ? 's' : ''}`;
+      elPurgeBtn.classList.add('btn-danger-armed');
+      elPurgeBtn.disabled = false;
+    } catch (err) {
+      toast(`Could not read missing count: ${err.message}`, 'error');
+      resetPurgeButton();
+    }
+    return;
+  }
+
+  // Armed → execute the irreversible purge.
+  elPurgeBtn.disabled = true;
+  elPurgeBtn.textContent = 'Purging…';
+  try {
+    const { purged } = await api.purgeMissing();
+    toast(`Purged ${purged} missing item${purged !== 1 ? 's' : ''}`, 'success');
+    resetSettings();
+    await refreshSidebarData();
+    loadLibrary();
+  } catch (err) {
+    toast(`Purge failed: ${err.message}`, 'error');
+    resetPurgeButton();
+  }
+});
+
+// View missing — list the orphan rows (present = 0), markers included, so they
+// can be sanity-checked before an irreversible purge. Toggles open/closed.
+elViewMissingLink.addEventListener('click', async (e) => {
+  e.preventDefault();
+  if (!elMissingList.classList.contains('hidden')) {
+    elMissingList.classList.add('hidden');
+    return;
+  }
+  elMissingList.classList.remove('hidden');
+  elMissingList.innerHTML = '<div class="settings-missing-empty">Loading…</div>';
+  try {
+    const data = await api.getLibrary({ missing: 'only', limit: 200 });
+    if (!data.items.length) {
+      elMissingList.innerHTML = '<div class="settings-missing-empty">No missing items.</div>';
+      return;
+    }
+    const rows = data.items.map(it => {
+      const title = escHtml(it.title || it.filename);
+      const sub = escHtml(it.artist || it.libraryName || it.ext.toUpperCase());
+      const markers = it.markerCount > 0
+        ? `<span class="settings-missing-markers">${it.markerCount} marker${it.markerCount !== 1 ? 's' : ''}</span>`
+        : '';
+      return `<div class="settings-missing-row">
+          <div class="settings-missing-main">
+            <span class="settings-missing-title">${title}</span>
+            <span class="settings-missing-sub">${sub}</span>
+          </div>
+          ${markers}
+        </div>`;
+    }).join('');
+    const more = data.nextCursor ? '<div class="settings-missing-empty">Showing first 200.</div>' : '';
+    elMissingList.innerHTML = rows + more;
+  } catch (err) {
+    elMissingList.innerHTML = `<div class="settings-missing-empty">Failed to load: ${escHtml(err.message)}</div>`;
   }
 });
 
@@ -652,7 +775,10 @@ document.addEventListener('keydown', (e) => {
     elSearchInput.focus();
   }
   if (e.key === 'Escape') {
-    if (!elImportOverlay.classList.contains('hidden')) {
+    if (!elSettingsOverlay.classList.contains('hidden')) {
+      elSettingsOverlay.classList.add('hidden');
+      resetSettings();
+    } else if (!elImportOverlay.classList.contains('hidden')) {
       elImportOverlay.classList.add('hidden');
     } else if (elSidebar.classList.contains('open')) {
       closeSidebar();
