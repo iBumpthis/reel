@@ -550,6 +550,51 @@ Interim gap (by design): a rename leaves a retained orphan (old path, all data,
 marked missing) plus a fresh empty row (new path). No data is lost, but
 reconciling them is manual until Stage 2. See Planned.
 
+**Settings surface + Purge UI + Full Metadata Scan (same 1.10.0).** The
+frontend the Stage 1 backend was waiting on, plus one small scanner flag:
+
+- **Settings overlay.** A first in-app server-settings surface, opened by a gear
+  affordance beside the header Scan button (reuses the existing `.overlay`
+  pattern). Deliberately minimal — a single "Maintenance" section for now,
+  framed to grow (page-level theme/visualizer/light dials are the obvious next
+  tenants). Closes on backdrop, ✕, or Escape; reopening resets transient state.
+- **Purge Missing — two-click confirm.** First click reads the LIVE count from
+  `GET /api/scan/missing` and arms the button (`Confirm: delete N items`, solid
+  red); second click calls `POST /api/scan/purge-missing`, toasts the purged
+  count, and refreshes sidebar + grid. Zero-count first click no-ops with a
+  toast. Lives in the Settings panel, NOT beside Scan — the adjacency to a
+  frequent, harmless action is exactly what invites an accidental irreversible
+  click. No new backend; both endpoints shipped with Stage 1.
+- **View missing.** A toggle in the purge row lists the orphan rows
+  (`GET /api/library?missing=only`, capped at 200), showing each item's title,
+  artist/library, and marker count — a sanity check on what an irreversible
+  purge will take before arming it.
+- **Full Metadata Scan.** The non-destructive replacement for the removed
+  "delete the row and re-scan to refresh tags" footgun. Implemented as a
+  `forceTagReread` option on the existing scanner (`POST /api/scan` with body
+  `{ fullMetadata: true }`), NOT a second scan engine: it runs the normal walk
+  + present/missing reconciliation, but (a) flips the `!existingMedia` tag-read
+  gate so `music-metadata` runs for existing audio files too, and (b) routes
+  those rows through `upsertMediaForceMeta`, whose ON CONFLICT clause refreshes
+  the metadata columns. Scan response gains `totalMetaUpdated`.
+  - **COALESCE refresh, not blind overwrite (deviation from the handoff's
+    "updates the metadata columns").** Each refreshed column is
+    `COALESCE(@meta_x, x)` — the embedded value wins ONLY when the file actually
+    carries that tag; an absent or unreadable tag leaves the existing (possibly
+    hand-edited) value alone instead of nulling it or stamping a filename guess.
+    `description`, markers, and tag links are never touched — they aren't
+    embedded-tag-derived. Net: where a file HAS a tag it overwrites your edit
+    (that's the point of "refresh from tags"), but it can't silently erase data
+    a missing tag would otherwise blank.
+  - **Cost note (carry-forward).** This is the one operation that pays the real
+    CIFS read cost the normal scan avoids — it reads every existing audio file's
+    header. Trivial at current scale, but it's why it's a deliberate maintenance
+    button, never on the hot scan path.
+- **Tests.** New `app/test/full-metadata.test.js` — DB-backed (same skip-clean
+  pattern as soft-delete) — locks the COALESCE contract: present tags overwrite,
+  absent tags preserve, per-field mixing, description/markers/tags survive, and
+  missing-row reactivation through the force upsert.
+
 ---
 
 ## Planned
@@ -565,19 +610,6 @@ reconciling them is manual until Stage 2. See Planned.
   — fingerprint cost over CIFS, and collision/ambiguity handling when two
   missing files could match one new path — which is why it's split out of the
   safety fix.
-- **Settings menu + purge UI.** A first server-settings surface in the app.
-  Houses the **Purge Missing** action behind a two-click confirm ("Confirm? X
-  items will be removed") — deliberately NOT next to Scan on the main page,
-  where the adjacency invites accidents. Backend (`/api/scan/missing`,
-  `/api/scan/purge-missing`) already shipped in 1.10.0.
-- **Full Metadata Scan.** A forced embedded-tag re-read for EXISTING files
-  (the normal scan skips them — it only tag-reads new files, which is already
-  the light path), updating metadata in place WITHOUT deleting the row. The
-  non-destructive replacement for the old "delete the row and re-scan to refresh
-  tags" footgun. A flag on the existing scanner, not a second scan engine.
-  Belongs in the Settings "maintenance" section alongside Purge — both are
-  heavier, deliberate, user-initiated operations that don't belong on the hot
-  path.
 
 ### Visualizer polish (post-1.9.3)
 

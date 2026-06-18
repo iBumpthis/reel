@@ -108,9 +108,18 @@ async function* walkDir(dir, counters, visited) {
  *
  * @param {object} config - app config with libraries and allowedExtensions
  * @param {import('better-sqlite3').Database} db
- * @returns {Promise<{ scanId: number, totalUpserts: number, totalMissing: number, totalReactivated: number, skippedLibraries: string[], brokenSymlinks: number }>}
+ * @param {object} [options]
+ * @param {boolean} [options.forceTagReread=false] - Full Metadata Scan: also
+ *   re-read embedded tags for existing audio files and refresh their metadata
+ *   columns (COALESCE — present tags only; markers/tags/description untouched).
+ * @returns {Promise<{ scanId: number, totalUpserts: number, totalMissing: number, totalReactivated: number, totalMetaUpdated: number, skippedLibraries: string[], brokenSymlinks: number }>}
  */
-export async function scanLibraries(config, db) {
+export async function scanLibraries(config, db, options = {}) {
+  // forceTagReread (Full Metadata Scan): re-read embedded tags for EXISTING
+  // audio files too — normally skipped as I/O waste — and route them through
+  // an upsert variant that refreshes metadata columns on conflict. See the
+  // upsertMediaForceMeta statement and the tag-read block below.
+  const { forceTagReread = false } = options;
   const allowedSet = new Set(config.allowedExtensions);
   const globalAutoTagDepth = config.autoTagDepth || 0;
   const globalAutoTagExclude = new Set((config.autoTagExclude || []).map(s => s.toLowerCase()));
@@ -147,6 +156,37 @@ export async function scanLibraries(config, db) {
      WHERE library_id = ? AND last_seen_scan < ? AND present = 1`
   );
 
+  // Full Metadata Scan upsert variant. Identical to upsertMedia for the INSERT
+  // (new file) path, but its ON CONFLICT clause ALSO refreshes the embedded-
+  // tag-derived metadata columns. Each refresh column is COALESCE(@meta_x, x):
+  // the new value wins ONLY when the file actually carries that tag, otherwise
+  // the existing (possibly hand-edited) value is preserved — an absent or
+  // unreadable tag never clobbers good data with NULL or a filename guess.
+  // `description`, markers, and tag links are deliberately untouched: they are
+  // not embedded-tag-derived and must survive a metadata refresh.
+  const upsertMediaForceMeta = db.prepare(`
+    INSERT INTO media (library_id, abs_path, rel_path, filename, ext, media_type,
+                       size_bytes, mtime_ms, title, artist, year, album, track_number,
+                       last_seen_scan)
+    VALUES (@library_id, @abs_path, @rel_path, @filename, @ext, @media_type,
+            @size_bytes, @mtime_ms, @title, @artist, @year, @album, @track_number,
+            @last_seen_scan)
+    ON CONFLICT(abs_path) DO UPDATE SET
+      rel_path = @rel_path,
+      filename = @filename,
+      size_bytes = @size_bytes,
+      mtime_ms = @mtime_ms,
+      last_seen_scan = @last_seen_scan,
+      present = 1,
+      missing_since = NULL,
+      title = COALESCE(@meta_title, title),
+      artist = COALESCE(@meta_artist, artist),
+      year = COALESCE(@meta_year, year),
+      album = COALESCE(@meta_album, album),
+      track_number = COALESCE(@meta_track_number, track_number),
+      updated_at = datetime('now')
+  `);
+
   // Auto-tag prepared statements
   const findTag = db.prepare('SELECT id FROM tags WHERE normalized = ?');
   const insertTag = db.prepare('INSERT INTO tags (name, normalized) VALUES (@name, @normalized)');
@@ -156,6 +196,7 @@ export async function scanLibraries(config, db) {
   let totalUpserts = 0;
   let totalMissing = 0;
   let totalReactivated = 0;
+  let totalMetaUpdated = 0;
   let tagReadsSkipped = 0;
   const skippedLibraries = [];
   const counters = { brokenSymlinks: 0, walkErrors: 0 };
@@ -222,30 +263,47 @@ export async function scanLibraries(config, db) {
         // a reactivation (the ON CONFLICT clause flips present back to 1).
         if (existingMedia && existingMedia.present === 0) totalReactivated++;
 
-        // ID3 tag reading for NEW audio files only — fall back to parseFilename
-        let artist = parsed.artist;
-        let title = parsed.title;
-        let year = parsed.year;
-        let album = null;
-        let trackNumber = null;
+        // Embedded-tag read. Normally done for NEW audio files only — the
+        // normal upsert's ON CONFLICT clause doesn't touch metadata columns,
+        // so re-reading an existing file's tags would be pure I/O waste (the
+        // one real CIFS read cost). Full Metadata Scan (forceTagReread) opts
+        // existing files back in: read their tags AND route through the
+        // metadata-refreshing upsert variant below.
+        const wantTagRead = mediaType === 'audio' && TAG_READABLE.has(ext)
+          && (!existingMedia || forceTagReread);
 
-        if (mediaType === 'audio' && TAG_READABLE.has(ext) && !existingMedia) {
+        // Embedded values, NULL when the tag is absent/empty or the read fails.
+        // Kept separate from the parseFilename fallback so the force upsert can
+        // COALESCE — overwriting only fields the file actually carries. The
+        // `|| null` (not `??`) preserves the original new-file behavior exactly:
+        // empty-string / zero tags collapse to null and fall back, same as the
+        // prior `if (c.field)` truthy guards.
+        let embArtist = null, embTitle = null, embYear = null, embAlbum = null, embTrack = null;
+
+        if (wantTagRead) {
           try {
             const meta = await parseFile(absPath, { skipCovers: true, duration: false });
             const c = meta.common;
-            if (c.artist) artist = c.artist;
-            if (c.title) title = c.title;
-            if (c.album) album = c.album;
-            if (c.year) year = c.year;
-            if (c.track?.no) trackNumber = c.track.no;
+            embArtist = c.artist || null;
+            embTitle = c.title || null;
+            embAlbum = c.album || null;
+            embYear = c.year || null;
+            embTrack = c.track?.no || null;
           } catch {
-            // Tag read failed — use parseFilename values (already set above)
+            // Tag read failed — embedded values stay null (fallbacks apply)
           }
         } else if (mediaType === 'audio' && TAG_READABLE.has(ext) && existingMedia) {
           tagReadsSkipped++;
         }
 
-        upsertMedia.run({
+        // INSERT values (new file): embedded tag wins, else parseFilename.
+        const artist = embArtist || parsed.artist;
+        const title = embTitle || parsed.title;
+        const year = embYear || parsed.year;
+        const album = embAlbum;
+        const trackNumber = embTrack;
+
+        const base = {
           library_id: libraryId,
           abs_path: absPath,
           rel_path: relPath,
@@ -260,7 +318,22 @@ export async function scanLibraries(config, db) {
           album,
           track_number: trackNumber,
           last_seen_scan: scanId,
-        });
+        };
+
+        if (existingMedia && forceTagReread) {
+          // Metadata-refresh path: COALESCE-update from embedded tags only.
+          upsertMediaForceMeta.run({
+            ...base,
+            meta_title: embTitle,
+            meta_artist: embArtist,
+            meta_year: embYear,
+            meta_album: embAlbum,
+            meta_track_number: embTrack,
+          });
+          totalMetaUpdated++;
+        } else {
+          upsertMedia.run(base);
+        }
 
         // Get the media ID for tagging (re-query since upsert may have inserted)
         const mediaRow = existingMedia || getMediaByPath.get(absPath);
@@ -340,8 +413,9 @@ export async function scanLibraries(config, db) {
   // purge (hard DELETE) fires AFTER DELETE and removes the row from the index.
 
   console.log(`[reel] Scan complete: ${totalUpserts} upserted, ${totalMissing} marked missing, ${totalReactivated} reactivated` +
+    (forceTagReread ? `, ${totalMetaUpdated} metadata-refreshed` : '') +
     (skippedLibraries.length ? `, mark-missing skipped for: ${skippedLibraries.join(', ')}` : ''));
-  return { scanId, totalUpserts, totalMissing, totalReactivated, skippedLibraries, brokenSymlinks: counters.brokenSymlinks, walkErrors: counters.walkErrors };
+  return { scanId, totalUpserts, totalMissing, totalReactivated, totalMetaUpdated, skippedLibraries, brokenSymlinks: counters.brokenSymlinks, walkErrors: counters.walkErrors };
 }
 
 /**

@@ -15,19 +15,26 @@ export default async function scanRoutes(fastify) {
   // marks rows missing.
   const purgeMissing = db.prepare('DELETE FROM media WHERE present = 0');
 
-  // POST /api/scan — synchronous HTTP, async internals
+  // POST /api/scan — synchronous HTTP, async internals.
+  // Optional body { fullMetadata: true } runs a Full Metadata Scan: the same
+  // walk + present/missing reconciliation, plus a forced embedded-tag re-read
+  // that refreshes metadata columns on EXISTING audio files (the normal scan
+  // skips that read as I/O waste). Same in-flight gate either way — a metadata
+  // scan and a normal scan can't run concurrently.
   fastify.post('/api/scan', async (request, reply) => {
     if (scanInFlight) {
       return reply.code(409).send({ ok: false, error: 'Scan already in progress' });
     }
+    const fullMetadata = request.body?.fullMetadata === true;
     scanInFlight = true;
     try {
-      const result = await scanLibraries(fastify.config, fastify.db);
+      const result = await scanLibraries(fastify.config, fastify.db, { forceTagReread: fullMetadata });
       return {
         ok: true,
         totalUpserts: result.totalUpserts,
         totalMissing: result.totalMissing,
         totalReactivated: result.totalReactivated,
+        totalMetaUpdated: result.totalMetaUpdated,
         skippedLibraries: result.skippedLibraries,
         brokenSymlinks: result.brokenSymlinks,
         walkErrors: result.walkErrors,
