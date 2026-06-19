@@ -119,11 +119,11 @@ participants) are parsed into individual artists. The `b2b` delimiter is
 whitespace-bounded and case-insensitive, so it only fires on a real separator —
 an artist whose name happens to contain the substring is left intact.
 
-For `Excision b2b Wooli b2b Crankdat - Lost Lands (2024).mp4`:
+For `Artist1 b2b Artist2 b2b Artist3 - EVENT (2024).mp4`:
 
-- **Artist display** (`media.artist`): `Excision b2b Wooli b2b Crankdat` by
-  default. Set `b2bDisplayJoin` to `" | "` for `Excision | Wooli | Crankdat`.
-- **Tags** (when `b2bTagging` is `true`): `Excision`, `Wooli`, `Crankdat`, and
+- **Artist display** (`media.artist`): `Artist1 b2b Artist2 b2b Artist3` by
+  default. Set `b2bDisplayJoin` to `" | "` for `Artist1 | Artist2 | Artist3`.
+- **Tags** (when `b2bTagging` is `true`): `Artist1`, `Artist2`, `Artist3`, and
   `b2b`. These are filename-derived, applied via the same idempotent path as
   directory/keyword auto-tagging, so a normal scan backfills them onto
   already-imported files — no Full Metadata Scan required.
@@ -131,7 +131,7 @@ For `Excision b2b Wooli b2b Crankdat - Lost Lands (2024).mp4`:
 Only b2b **participants** are tagged, not every solo artist, to keep the tag
 list bounded. Solo-artist browse stays on the artist facet. To find every set
 an artist appears in — solo *and* b2b — use the search box: it matches the
-artist column (full-text) as well as tags, so `wooli` returns both a solo Wooli
+artist column (full-text) as well as tags, so `artist2` returns both a solo Wooli
 set and any b2b set Wooli is in. The `b2b` tag itself is a one-click filter for
 all back-to-back sets.
 
@@ -145,13 +145,13 @@ When a set of artists performs under a collective name, add it in square
 brackets at the end of the artist chunk (before the ` - `):
 
 ```
-Crankdat b2b Wooli [WANKDAT] - Ultra Music Festival Miami (2025).mp4
-Eptic b2b Space Laces b2b SVDDEN DEATH [MASTERHVND] - Some Event (2024).mp4
+Artist3 b2b Artist2 [DUONAME] - Some Event (2025).mp4
+Artist4 b2b Artist5 b2b Artist6 [TRIONAME] - Some Event (2024).mp4
 ```
 
-The bracketed name is parsed as a **tag** (`WANKDAT`, `MASTERHVND`) and stripped
+The bracketed name is parsed as a **tag** (`DUONAME`, `TRIONAME`) and stripped
 from the artist display — so the artist line stays the member chain
-(`Crankdat b2b Wooli`), the file still sorts under its leading member, and the
+(`Artist3 b2b Artist2`), the file still sorts under its leading member, and the
 collective name is searchable and filterable as a tag. This works for any number
 of members, and for named acts as well as occasional pairings (gated by the same
 `b2bTagging` switch).
@@ -182,7 +182,7 @@ Each rule checks whether the filename contains the `match` string
 auto-tagging, tag rules are additive and never remove existing tags.
 
 For example, with the rules above, a file named
-`Eptic - EDC Orlando Virtual Rave-A-Thon (2020).mp4` would be tagged `EDC`.
+`Artist4 - EDC Orlando Virtual Rave-A-Thon (2020).mp4` would be tagged `EDC`.
 
 ### Embedded Metadata (ID3 Tags)
 
