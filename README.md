@@ -51,7 +51,9 @@ override file values where noted.
   ],
   "autoTagDepth": 0,
   "autoTagExclude": [],
-  "tagRules": []
+  "tagRules": [],
+  "b2bTagging": true,
+  "b2bDisplayJoin": " b2b "
 }
 ```
 
@@ -65,6 +67,8 @@ override file values where noted.
 | `autoTagDepth` | No | — | Number of directory segments (from library root) to auto-tag on scan. Default `0` (disabled). Can be overridden per-library. |
 | `autoTagExclude` | No | — | Array of directory names to skip when auto-tagging (case-insensitive). Can be overridden per-library. |
 | `tagRules` | No | — | Array of `{match, tag}` keyword rules for filename-based auto-tagging. See below. |
+| `b2bTagging` | No | — | When `true` (default), back-to-back sets (`A b2b B - Event (YYYY)`) emit one tag per individual artist plus a `b2b` tag. See below. |
+| `b2bDisplayJoin` | No | — | Separator used to rebuild the artist display string for a b2b set. Default `" b2b "` (preserved verbatim). Set to `" | "` for a piped display. Does not affect tagging or search. |
 
 ### Auto-Tagging
 
@@ -108,6 +112,55 @@ In this example, the Music library disables directory auto-tagging (relying
 on embedded tags instead), while the Video library uses depth 1 with its own
 exclude list. Libraries without overrides fall back to the global values.
 
+### Back-to-Back (b2b) Sets
+
+Files named `Artist1 b2b Artist2 - Event (YYYY).ext` (any number of `b2b`
+participants) are parsed into individual artists. The `b2b` delimiter is
+whitespace-bounded and case-insensitive, so it only fires on a real separator —
+an artist whose name happens to contain the substring is left intact.
+
+For `Artist1 b2b Artist2 b2b Artist3 - EVENT (2024).mp4`:
+
+- **Artist display** (`media.artist`): `Artist1 b2b Artist2 b2b Artist3` by
+  default. Set `b2bDisplayJoin` to `" | "` for `Artist1 | Artist2 | Artist3`.
+- **Tags** (when `b2bTagging` is `true`): `Artist1`, `Artist2`, `Artist3`, and
+  `b2b`. These are filename-derived, applied via the same idempotent path as
+  directory/keyword auto-tagging, so a normal scan backfills them onto
+  already-imported files — no Full Metadata Scan required.
+
+Only b2b **participants** are tagged, not every solo artist, to keep the tag
+list bounded. Solo-artist browse stays on the artist facet. To find every set
+an artist appears in — solo *and* b2b — use the search box: it matches the
+artist column (full-text) as well as tags, so `artist2` returns both a solo Wooli
+set and any b2b set Wooli is in. The `b2b` tag itself is a one-click filter for
+all back-to-back sets.
+
+If an artist name contains a `-`, remove it from the filename for correct
+parsing (the first ` - ` is the artist/title separator) and re-add it via the
+metadata editor.
+
+#### Group / Act Aliases
+
+When a set of artists performs under a collective name, add it in square
+brackets at the end of the artist chunk (before the ` - `):
+
+```
+Artist3 b2b Artist2 [DUONAME] - Some Event (2025).mp4
+Artist4 b2b Artist5 b2b Artist6 [TRIONAME] - Some Event (2024).mp4
+```
+
+The bracketed name is parsed as a **tag** (`DUONAME`, `TRIONAME`) and stripped
+from the artist display — so the artist line stays the member chain
+(`Artist3 b2b Artist2`), the file still sorts under its leading member, and the
+collective name is searchable and filterable as a tag. This works for any number
+of members, and for named acts as well as occasional pairings (gated by the same
+`b2bTagging` switch).
+
+`[...]` is a reserved slot **only in the artist position** (before the first
+` - `). A bracket in the event/title portion — e.g.
+`… - Ultra [Mainstage] (2025).mp4` — is left as literal title text and is not
+turned into a tag.
+
 ### Tag Rules (Filename Keyword Matching)
 
 Tag rules apply tags based on keywords found in filenames. This complements
@@ -129,7 +182,7 @@ Each rule checks whether the filename contains the `match` string
 auto-tagging, tag rules are additive and never remove existing tags.
 
 For example, with the rules above, a file named
-`Eptic - EDC Orlando Virtual Rave-A-Thon (2020).mp4` would be tagged `EDC`.
+`Artist4 - EDC Orlando Virtual Rave-A-Thon (2020).mp4` would be tagged `EDC`.
 
 ### Embedded Metadata (ID3 Tags)
 

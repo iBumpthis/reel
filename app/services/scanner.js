@@ -125,6 +125,15 @@ export async function scanLibraries(config, db, options = {}) {
   const globalAutoTagExclude = new Set((config.autoTagExclude || []).map(s => s.toLowerCase()));
   const tagRules = config.tagRules || [];
 
+  // Back-to-back (b2b) parsing. `b2bTagging` (default ON) controls whether each
+  // individual artist in a b2b set AND a literal `b2b` tag are emitted. The
+  // `b2bDisplayJoin` is the separator the parser uses to rebuild the artist
+  // DISPLAY string ("Excision b2b Wooli" by default; set to " | " for piped).
+  // Tag emission is filename-derived (like dir/keyword auto-tag), independent
+  // of any embedded artist tag that may win the media.artist column.
+  const b2bTagging = config.b2bTagging !== false;
+  const b2bDisplayJoin = config.b2bDisplayJoin ?? ' b2b ';
+
   // Generate a unique scan ID (monotonic counter)
   const scanId = Date.now();
 
@@ -251,7 +260,7 @@ export async function scanLibraries(config, db, options = {}) {
 
         const filename = basename(absPath);
         const relPath = relative(lib.path, absPath);
-        const parsed = parseFilename(filename);
+        const parsed = parseFilename(filename, { b2bJoin: b2bDisplayJoin });
 
         // Check if this file already exists in the DB.
         // If it does, skip the expensive music-metadata tag read — the upsert's
@@ -360,6 +369,28 @@ export async function scanLibraries(config, db, options = {}) {
               applyTag(rule.tag, mediaId, findTag, insertTag, linkTag);
             }
           }
+        }
+
+        // Back-to-back (b2b) tags. For a b2b set, each individual artist becomes
+        // a tag and a literal `b2b` tag is added. Like dir/keyword auto-tag, this
+        // is idempotent (linkTag is INSERT OR IGNORE) and runs for existing rows
+        // too, so a normal scan backfills b2b tags onto already-imported files —
+        // no Full Metadata Scan required. Only b2b PARTICIPANTS are tagged, not
+        // every solo artist, to keep the tag sidebar bounded; solo-artist browse
+        // stays on the artist facet / search.
+        if (b2bTagging && parsed.isB2B) {
+          for (const a of parsed.artists) {
+            applyTag(a, mediaId, findTag, insertTag, linkTag);
+          }
+          applyTag('b2b', mediaId, findTag, insertTag, linkTag);
+        }
+
+        // Group/act alias tag (e.g. "[WANKDAT]", "[MASTERHVND]"). The collective
+        // name for a set of artists, parsed from a trailing "[...]" on the artist
+        // chunk. Tagged whenever present (independent of isB2B — a named act need
+        // not be written as a b2b chain), gated by the same b2bTagging switch.
+        if (b2bTagging && parsed.alias) {
+          applyTag(parsed.alias, mediaId, findTag, insertTag, linkTag);
         }
 
         libUpserts++;
