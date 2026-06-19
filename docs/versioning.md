@@ -597,6 +597,62 @@ frontend the Stage 1 backend was waiting on, plus one small scanner flag:
 
 ---
 
+### v1.11.0 — Back-to-Back (b2b) Set Parsing
+
+Filename-grammar decision (the b2b gate): adopt the **simple** grammar —
+`Artist - Event (YYYY).ext` and `A1 b2b A2 [b2b A3 …] - Event (YYYY).ext`. The
+Plex-rich `[1080p - x264 …]` encoding block is explicitly out of scope (it was
+only ever a discussion example).
+
+- **Parser (`services/metadata.js`).** `parseFilename` now splits a `b2b` artist
+  chunk into individual artists. Return shape expanded from
+  `{ artist, title, year }` to `{ artist, artists, isB2B, title, year }`:
+  - `artists` — array of individual artists (length 1 for solo, `[]` for no
+    artist). `isB2B` — true only when more than one b2b participant is present.
+  - `artist` — the DISPLAY string. b2b participants are re-joined with the
+    `b2bJoin` option (default `" b2b "`, i.e. preserved verbatim — domain-correct
+    and lossless). The scanner passes `config.b2bDisplayJoin`.
+  - The `b2b` delimiter is whitespace-bounded and case-insensitive
+    (`/\s+b2b\s+/i`), so it won't fire on a substring inside an artist name.
+    Split operates on the post-dash artist chunk only (matches the stated
+    grammar); a dash-less `A b2b B.mp4` is treated as a title, not split.
+  - **Group/act alias.** A trailing `[Name]` on the artist chunk (e.g.
+    `Crankdat b2b Wooli [WANKDAT]`, `Eptic b2b Space Laces b2b SVDDEN DEATH
+    [MASTERHVND]`) is extracted as a new `alias` field — the collective name for
+    the set of artists — and stripped from the artist chunk BEFORE the b2b split,
+    so it never glues onto the last artist or leaks into the display. Anchored to
+    the end of the artist chunk (before the first ` - `), so a `[...]` in the
+    event/title portion stays literal title text. Return shape is now
+    `{ artist, artists, alias, isB2B, title, year }`.
+- **Scanner (`services/scanner.js`).** When `b2bTagging` is enabled (default) and
+  a file is a b2b set, each individual artist becomes a tag and a literal `b2b`
+  tag is added — via the same idempotent `applyTag` path as directory/keyword
+  auto-tagging, so a **normal scan backfills** b2b tags onto already-imported
+  files (no Full Metadata Scan needed). Only b2b participants are tagged, not
+  every solo artist, to keep the tag list bounded. Tag emission is
+  filename-derived, independent of any embedded artist tag that wins the column.
+  A parsed `[alias]` is applied as a tag too (same `b2bTagging` gate), so a
+  named act / pairing alias becomes a one-click facet across all its sets.
+- **Config.** New `b2bTagging` (bool, default `true`) and `b2bDisplayJoin`
+  (string, default `" b2b "`). Documented in README.
+- **Discovery model.** "All sets by artist X" (solo + b2b) is served by the
+  existing search box — `q` already matches the FTS-indexed `artist` column
+  *and* tag names, so a piped/joined display string still tokenizes each
+  participant. The `b2b` tag is a one-click filter for all back-to-back sets.
+- **Known limitation (deferred).** The artist sidebar *facet* is exact-match on
+  the `artist` column, so a b2b set does not appear under a solo participant's
+  facet, and a participant tag shows only that artist's b2b sets. Search bridges
+  both. The clean unification (a `media_artists` join table feeding both facet
+  and filter) is a separate normalization session, deferred until the
+  fragmentation is an actual annoyance.
+- **Tests.** `app/test/metadata.test.js` extended with b2b cases (two/three
+  artists, custom join, case-insensitivity, substring non-trigger, solo,
+  dash-less) and alias cases (duo/trio alias, title-position bracket left
+  literal, solo alias). Existing `deepEqual` cases updated for the expanded
+  return shape.
+
+---
+
 ## Planned
 
 ### Data Durability (continued, post-1.10.0)

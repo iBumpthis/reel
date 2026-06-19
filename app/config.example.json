@@ -11,5 +11,7 @@
   ],
   "autoTagDepth": 0,
   "autoTagExclude": [],
-  "tagRules": []
+  "tagRules": [],
+  "b2bTagging": true,
+  "b2bDisplayJoin": " b2b "
 }
