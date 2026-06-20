@@ -797,6 +797,54 @@ bulk markers importer a front end, and makes mis-routed CSVs fail loudly.
 
 ---
 
+### v1.15.0 — Artist Normalization, Stage B (facet/filter repoint + artist deep links)
+
+Stage B of the `media_artists` arc: the artist **read paths** now route through
+the relation built in Stage A, de-fragmenting the sidebar and fixing the b2b
+filter. No schema migration — purely code over the existing 005 tables.
+
+- **`GET /api/artists` reads the relation.** Was `GROUP BY media.artist` (the
+  display string), so a b2b set surfaced as its own `A b2b B` facet row and its
+  members fragmented from their solo sets. Now aggregates over
+  `artists ⋈ media_artists ⋈ media`, listing each artist once and counting every
+  present media they're linked to (solo + b2b). The combined `A b2b B` string no
+  longer appears as a facet entry — **a deliberate, user-visible change.**
+- **Artist filter resolves b2b membership.** `GET /api/library?artist=` was an
+  exact match on `media.artist`, so filtering `Excision` missed every
+  `Excision b2b …` set (the old search-box workaround). Replaced with an
+  `EXISTS` membership test over `media_artists`, returning an artist's solo
+  **and** b2b sets. Both reads stay **case-exact** (`Rezz` ≠ `REZZ`); casing
+  fold is Stage C, still parked.
+- **Player artist deep links.** The player title's artist is now one or more
+  links into the filtered library (`/?artist=<name>`); a b2b set gets one link
+  per member. Driven by a new `artists[]` member array on the `GET /api/media/:id`
+  payload (relation-sourced, so a link always lands on a populated view). The
+  visible label is unchanged — just clickable. Degrades to plain text if the
+  display string and relation disagree (e.g. an inline edit pending a rescan).
+- **Library deep-link hydration.** `library.js` now reads `?artist=` on load and
+  keeps it in sync (`replaceState`) as the filter changes — refresh-safe,
+  shareable, and the round-trip target for the player links.
+- **Count semantics:** a b2b set increments each member's facet count by one
+  ("sets this artist appears in"). Membership is unique per `(media_id,
+  artist_id)`, so no double-counting.
+- **Soft-delete respected:** every Stage B read keeps `present = 1`, so missing
+  media stay hidden from the facet and filter while retaining their links.
+- **Sort untouched:** `artist` sort still projects `COALESCE(m.artist,
+  m.filename)` — the display string is the right (unambiguous) sort key for b2b.
+- **Tests:** new `library-artists.test.js` — facet de-fragmentation + counts +
+  `present` filtering, b2b filter (solo + b2b), case-exactness — under the same
+  better-sqlite3 graceful-skip pattern. New SQL validated end-to-end against the
+  001–005 migration chain via `node:sqlite`.
+
+**Known limitation (flagged, not fixed here):** inline artist edits
+(`PATCH /api/media/:id`) update `media.artist` but do **not** re-sync
+`media_artists`, so the facet/filter reflect the edit only after the next scan.
+Pre-Stage-B these were instant (they read `media.artist` directly). The relation
+self-heals on rescan; a write-path re-sync is a candidate follow-up (kept out of
+this read-path release).
+
+---
+
 ### v1.14.0 — Artist Normalization, Stage A (`media_artists` additive schema)
 
 Stage A of the `media_artists` arc: a many-to-many `media ↔ artists` relation

@@ -97,7 +97,17 @@ export default async function libraryRoutes(fastify) {
       params.ext = ext.toLowerCase();
     }
     if (artist) {
-      conditions.push('m.artist = @artist');
+      // Membership test against the relational artist model (media_artists,
+      // migration 005) instead of `m.artist = @artist`. The exact-string match
+      // only hit the display column, so filtering "Excision" missed every
+      // "Excision b2b …" set; the relation resolves b2b participation. a.name is
+      // case-exact (Stage A invariant) — do NOT lower() here; "Rezz" ≠ "REZZ".
+      // The value passed is the artist name surfaced by /api/artists, which the
+      // sidebar keys on directly.
+      conditions.push(
+        'EXISTS (SELECT 1 FROM media_artists ma JOIN artists a ON a.id = ma.artist_id ' +
+        'WHERE ma.media_id = m.id AND a.name = @artist)'
+      );
       params.artist = artist;
     }
     if (tag) {

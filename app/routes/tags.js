@@ -30,12 +30,26 @@ export default async function tagRoutes(fastify) {
   });
 
   // GET /api/artists
+  // Reads the RELATIONAL artist model (media_artists, migration 005) rather than
+  // GROUP BY on the denormalized media.artist text. The old query grouped on the
+  // display string, so a b2b set ("A b2b B") was its own facet row and its
+  // members fragmented away from their solo sets. Aggregating over the relation
+  // lists each artist once and counts every present media they're linked to
+  // (solo + b2b). The combined "A b2b B" string no longer appears as a facet.
+  //
+  // CASE-EXACT: a.name is the case-preserving identity (Stage A); "Rezz" and
+  // "REZZ" stay distinct rows. Case folding is Stage C, deliberately parked.
+  //
+  // present = 1: soft-deleted (missing) media keep their links but stay hidden,
+  // matching the read-path filtering applied everywhere else.
   const allArtists = db.prepare(`
-    SELECT artist AS name, COUNT(*) AS count
-    FROM media
-    WHERE artist IS NOT NULL AND artist != '' AND present = 1
-    GROUP BY artist
-    ORDER BY artist ASC
+    SELECT a.name AS name, COUNT(*) AS count
+    FROM artists a
+    JOIN media_artists ma ON ma.artist_id = a.id
+    JOIN media m          ON m.id = ma.media_id
+    WHERE m.present = 1
+    GROUP BY a.id
+    ORDER BY a.name ASC
   `);
 
   fastify.get('/api/artists', async () => {

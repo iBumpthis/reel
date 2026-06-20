@@ -129,21 +129,26 @@ For `Artist1 b2b Artist2 b2b Artist3 - EVENT (2024).mp4`:
   already-imported files — no Full Metadata Scan required.
 
 Only b2b **participants** are tagged, not every solo artist, to keep the tag
-list bounded. Solo-artist browse stays on the artist facet. To find every set
-an artist appears in — solo *and* b2b — use the search box: it matches the
-artist column (full-text) as well as tags, so `artist2` returns both a solo Wooli
-set and any b2b set Wooli is in. The `b2b` tag itself is a one-click filter for
-all back-to-back sets.
+list bounded. The artist facet and `artist=` filter read the relational
+`media_artists` model (see below), so selecting an artist returns every set they
+appear in — solo *and* b2b — directly. The `b2b` tag itself is a one-click
+filter for all back-to-back sets.
 
-> **Artist data model.** As of v1.14.0 a relational `media_artists` table is the
-> source of truth for *which artists a file belongs to* (one row per membership,
-> so a b2b set links to each participant individually). `media.artist` is kept as
-> the denormalized **display / full-text-search** value — it is what shows on the
-> card, what the artist facet and sort read, and the inline-edit target. The
-> artist *facet* and `artist=` *filter* still read `media.artist` (so the
-> search-box workaround above is the current way to unify solo + b2b); repointing
-> them through `media_artists` — which removes b2b facet fragmentation and powers
-> an artist→library link — is the next stage of the arc.
+> **Artist data model.** A relational `media_artists` table is the source of
+> truth for *which artists a file belongs to* (one row per membership, so a b2b
+> set links to each participant individually). `media.artist` is kept as the
+> denormalized **display / full-text-search** value — it is what shows on the
+> card, what the player title renders, the artist **sort** key, and the
+> inline-edit target. As of **v1.15.0** the artist **facet** and `artist=`
+> **filter** read through `media_artists`: each artist appears once in the
+> sidebar (b2b sets no longer fragment into combined `A b2b B` entries), and
+> filtering an artist returns their solo and b2b sets together. The player title
+> links each artist to its filtered library view (`/?artist=<name>`; one link
+> per member for a b2b set). Matching is **case-exact** (`Rezz` ≠ `REZZ`).
+>
+> *Note:* an inline artist edit updates `media.artist` immediately but re-syncs
+> into `media_artists` only on the next scan, so the facet/filter reflect the
+> edit after a rescan.
 
 If an artist name contains a `-`, remove it from the filename for correct
 parsing (the first ` - ` is the artist/title separator) and re-add it via the
