@@ -14,6 +14,7 @@ button, .btn {
   background: var(--bg-surface);
   color: var(--text-primary);
   cursor: pointer;
+  text-decoration: none;
   transition: background var(--transition-fast), border-color var(--transition-fast);
   white-space: nowrap;
 }
@@ -393,6 +394,16 @@ textarea.mono {
 }
 .settings-row > button {
   flex-shrink: 0;
+}
+/* Multiple actions in one row (e.g. Export CSV / JSON side by side). */
+.settings-row-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.settings-row-actions .btn {
+  display: inline-flex;
+  align-items: center;
 }
 
 /* --- Missing-items preview list --- */

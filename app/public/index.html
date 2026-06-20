@@ -134,6 +134,33 @@
     </div>
   </div>
 
+  <!-- Markers CSV Import Overlay (bulk, replace-all per matched file) -->
+  <div id="markerImportOverlay" class="overlay hidden">
+    <div class="overlay-backdrop" data-close="markerImportOverlay"></div>
+    <div class="overlay-panel">
+      <div class="overlay-header">
+        <span class="overlay-title">Import Markers (CSV)</span>
+        <button class="overlay-close" data-close="markerImportOverlay">&#10005;</button>
+      </div>
+      <p class="text-sm text-muted" style="margin-bottom: 12px;">
+        Paste a markers CSV with columns: <code>filename</code>,
+        <code>rel_path</code>, <code>start</code>, <code>end</code>,
+        <code>label</code>. Each file is matched by <code>rel_path</code>, then
+        <code>filename</code>.
+        <strong>This replaces all markers on every file present in the CSV</strong>
+        — their existing markers are deleted first. Files not listed are left
+        alone. This cannot be undone.
+      </p>
+      <textarea id="markerImportText" class="mono"
+        placeholder="filename,rel_path,start,end,label&#10;my-set.mp4,Artist1/my-set.mp4,0,225,Track One&#10;my-set.mp4,Artist1/my-set.mp4,225,440,Track Two"></textarea>
+      <div id="markerImportResult" class="import-preview hidden"></div>
+      <div class="overlay-footer">
+        <span id="markerImportStatus" class="edit-status"></span>
+        <button id="markerImportBtn" class="btn btn-danger">Import &amp; replace markers</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Help overlay -->
   <div id="helpOverlay" class="overlay hidden">
     <div class="overlay-backdrop" data-close="helpOverlay"></div>
@@ -221,6 +248,69 @@
       </div>
 
       <div class="settings-section">
+        <h3 class="settings-heading">Import</h3>
+
+        <div class="settings-row">
+          <div class="settings-row-text">
+            <div class="settings-row-title">Import Metadata (CSV)</div>
+            <p class="settings-row-desc">
+              Update title, artist, album, year, track, description, and tags on
+              existing items by matching filename / path. Empty cells keep
+              existing values. Tags are replaced where a <code>tags</code> column
+              is present.
+            </p>
+          </div>
+          <button id="openMetaImportBtn" class="btn">Open…</button>
+        </div>
+
+        <div class="settings-row">
+          <div class="settings-row-text">
+            <div class="settings-row-title">Import Markers (CSV)</div>
+            <p class="settings-row-desc">
+              Restore or bulk-edit tracklist markers from a markers CSV
+              (<code>filename, rel_path, start, end, label</code>).
+              <strong>Replaces all markers on every file present in the CSV</strong>
+              — their existing markers are deleted first. Files not in the CSV are
+              left untouched. This cannot be undone.
+            </p>
+          </div>
+          <button id="openMarkerImportBtn" class="btn">Open…</button>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <h3 class="settings-heading">Export</h3>
+
+        <div class="settings-row">
+          <div class="settings-row-text">
+            <div class="settings-row-title">Metadata</div>
+            <p class="settings-row-desc">
+              Full library metadata and tags, for backup or spreadsheet editing.
+              Re-importable above.
+            </p>
+          </div>
+          <div class="settings-row-actions">
+            <a class="btn btn-sm" href="/api/export?format=csv" target="_blank" rel="noopener">CSV</a>
+            <a class="btn btn-sm" href="/api/export?format=json" target="_blank" rel="noopener">JSON</a>
+          </div>
+        </div>
+
+        <div class="settings-row">
+          <div class="settings-row-text">
+            <div class="settings-row-title">Markers</div>
+            <p class="settings-row-desc">
+              One row per marker
+              (<code>filename, rel_path, start, end, label</code>),
+              re-importable above.
+            </p>
+          </div>
+          <div class="settings-row-actions">
+            <a class="btn btn-sm" href="/api/export?format=markers-csv" target="_blank" rel="noopener">CSV</a>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
         <h3 class="settings-heading">Maintenance</h3>
 
         <div class="settings-row">
@@ -260,10 +350,6 @@
 
   <footer class="app-footer">
     Reel <span id="footerVersion">—</span>
-    &nbsp;|&nbsp; <a href="#" id="helpLink">Help</a>
-    &nbsp;|&nbsp; <a href="#" id="importLink">Import CSV</a>
-    &nbsp;|&nbsp; <a href="/api/export?format=json" target="_blank">Export JSON</a>
-    &nbsp;|&nbsp; <a href="/api/export?format=markers-csv" target="_blank">Export Markers CSV</a>
   </footer>
 
   <script type="module" src="/js/library.js"></script>

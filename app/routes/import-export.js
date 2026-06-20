@@ -19,6 +19,17 @@ export default async function importExportRoutes(fastify) {
       });
     }
 
+    // Reject a marker-shaped CSV pasted into the metadata importer. Without
+    // this, marker rows match by filename, run updateMeta with all-undefined
+    // metadata columns (COALESCE no-ops, nothing blanked), skip the tag block,
+    // and report a cheerful `matched` count while importing zero markers — the
+    // silent-success trap. Markers belong on POST /api/import/markers.
+    if (hasMarkerColumns(records) && !hasMetadataColumns(records)) {
+      return reply.code(400).send({
+        error: 'This looks like a markers CSV (start/end/label, no metadata columns). Use Import Markers, not Import Metadata.',
+      });
+    }
+
     const findByFilename = db.prepare('SELECT id FROM media WHERE filename = ?');
     const findByRelPath = db.prepare('SELECT id FROM media WHERE rel_path = ?');
     const updateMeta = db.prepare(`
@@ -196,6 +207,16 @@ export default async function importExportRoutes(fastify) {
       });
     }
 
+    // Reject a non-markers CSV (e.g. a metadata export pasted here by mistake).
+    // Replace-all semantics mean a CSV lacking start/label would DELETE every
+    // matched file's existing markers and insert nothing — a silent marker
+    // wipe. Bail before touching the DB.
+    if (records.length && !hasMarkerColumns(records)) {
+      return reply.code(400).send({
+        error: 'This CSV has no start/label columns — expected a markers CSV (filename, rel_path, start, end, label). Nothing was changed.',
+      });
+    }
+
     const findByFilename = db.prepare('SELECT id FROM media WHERE filename = ?');
     const findByRelPath = db.prepare('SELECT id FROM media WHERE rel_path = ?');
     const deleteMarkers = db.prepare('DELETE FROM markers WHERE media_id = ?');
@@ -263,53 +284,112 @@ export default async function importExportRoutes(fastify) {
   });
 }
 
-/** Minimal CSV parser — handles quoted fields and commas within quotes. */
-function parseCsv(text) {
-  const lines = text.split(/\r?\n/).filter(l => l.trim());
-  if (lines.length < 2) return [];
+/**
+ * CSV parser with full RFC-4180-style quote handling. Unlike a naive
+ * line-split, this tokenizes the whole text so a quoted field may contain
+ * commas AND embedded newlines (e.g. a marker label pasted from a multi-line
+ * tracklist) without the record splitting across "lines." Handles `""`
+ * escaping and LF / CRLF / lone-CR endings. Returns records keyed by the
+ * header row; field values are trimmed (matching prior behaviour) and blank
+ * physical rows are dropped.
+ *
+ * Exported for unit testing (the route plugin is the default export).
+ */
+export function parseCsv(text) {
+  const rows = tokenizeCsv(text);
+  if (rows.length < 2) return [];
 
-  const headers = parseCSVLine(lines[0]);
+  const headers = rows[0].map(h => h.trim());
   const records = [];
 
-  for (let i = 1; i < lines.length; i++) {
-    const values = parseCSVLine(lines[i]);
+  for (let r = 1; r < rows.length; r++) {
+    const values = rows[r];
+    // Drop genuinely blank lines (a single empty field). Emptiness that lives
+    // inside quotes never reaches here as its own row — it stays within the
+    // quoted field's record.
+    if (values.length === 1 && values[0].trim() === '') continue;
     const obj = {};
-    headers.forEach((h, idx) => { obj[h.trim()] = values[idx]?.trim() ?? ''; });
+    headers.forEach((h, idx) => { obj[h] = (values[idx] ?? '').trim(); });
     records.push(obj);
   }
 
   return records;
 }
 
-function parseCSVLine(line) {
-  const fields = [];
-  let current = '';
+/**
+ * Tokenize CSV text into rows of raw field strings, quote-aware across line
+ * boundaries so embedded newlines inside quoted fields survive. Trimming is
+ * the caller's job so intentional internal whitespace is preserved here.
+ */
+function tokenizeCsv(text) {
+  const rows = [];
+  let row = [];
+  let field = '';
   let inQuotes = false;
 
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+
     if (inQuotes) {
-      if (ch === '"' && line[i + 1] === '"') {
-        current += '"';
-        i++; // skip escaped quote
-      } else if (ch === '"') {
-        inQuotes = false;
+      if (ch === '"') {
+        if (text[i + 1] === '"') { field += '"'; i++; } // escaped quote
+        else inQuotes = false;
       } else {
-        current += ch;
+        field += ch;
+      }
+      continue;
+    }
+
+    if (ch === '"') {
+      inQuotes = true;
+    } else if (ch === ',') {
+      row.push(field);
+      field = '';
+    } else if (ch === '\n') {
+      row.push(field);
+      rows.push(row);
+      row = [];
+      field = '';
+    } else if (ch === '\r') {
+      // CRLF: let the following \n close the row. Lone CR: close it here.
+      if (text[i + 1] !== '\n') {
+        row.push(field);
+        rows.push(row);
+        row = [];
+        field = '';
       }
     } else {
-      if (ch === '"') {
-        inQuotes = true;
-      } else if (ch === ',') {
-        fields.push(current);
-        current = '';
-      } else {
-        current += ch;
-      }
+      field += ch;
     }
   }
-  fields.push(current);
-  return fields;
+
+  // Flush a trailing record that wasn't newline-terminated.
+  if (field !== '' || row.length > 0) {
+    row.push(field);
+    rows.push(row);
+  }
+
+  return rows;
+}
+
+/**
+ * Column-shape detectors used to reject mis-routed CSVs at the import boundary
+ * — a markers CSV pasted into the metadata importer, or a metadata CSV pasted
+ * into the markers importer. Both inspect the header set of the first record.
+ * Exported for unit testing.
+ */
+const META_COLS = ['title', 'artist', 'year', 'album', 'track_number', 'description', 'tags'];
+
+export function hasMarkerColumns(records) {
+  if (!records.length) return false;
+  const keys = new Set(Object.keys(records[0]).map(k => k.toLowerCase()));
+  return keys.has('start') && keys.has('label');
+}
+
+export function hasMetadataColumns(records) {
+  if (!records.length) return false;
+  const keys = new Set(Object.keys(records[0]).map(k => k.toLowerCase()));
+  return META_COLS.some(c => keys.has(c));
 }
 
 /**

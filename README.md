@@ -237,8 +237,8 @@ Browse, search, filter, and edit your media collection. Features include:
 - Responsive multi-column card grid
 - Inline metadata editing (title, artist, year, description, tags)
 - Tag autocomplete from existing tags
-- CSV metadata import for bulk updates
-- In-app **Help** panel (header `?` icon or footer link): keyboard-shortcut and
+- Bulk CSV import/export for metadata and markers, in the Settings overlay
+- In-app **Help** panel (header `?` icon): keyboard-shortcut and
   filename-convention reference
 
 ### Player Page
@@ -518,6 +518,14 @@ replaced per matched media item — all existing markers for a matched file
 are deleted and the CSV rows are inserted. Matching uses `rel_path` first,
 then `filename` as fallback.
 
+In the UI, both importers and all exports live in the **Settings** overlay
+(header gear icon) under **Import** and **Export**. Import Markers uses a
+two-click confirm because it is destructive (replace-all per matched file).
+The two importers cross-check the CSV's column shape: a markers-shaped CSV
+(`start`/`end`/`label`) is rejected by the metadata importer, and a CSV with no
+`start`/`label` is rejected by the markers importer — so a mis-paste fails
+loudly instead of silently no-op'ing or wiping markers.
+
 ## API Reference
 
 All endpoints return JSON unless noted. Errors return `{ error: "message" }`
@@ -540,6 +548,7 @@ with appropriate HTTP status codes.
 | GET | `/api/scan/missing` | Count of retained-but-missing rows (`{ count }`) |
 | POST | `/api/scan/purge-missing` | Permanently delete all missing rows (cascades markers + tags) — `{ ok, purged }` |
 | POST | `/api/import` | Bulk metadata import (CSV or JSON) |
+| POST | `/api/import/markers` | Bulk marker import from CSV (replace-all per matched file) |
 | POST | `/api/import/markers` | Bulk marker import (CSV or JSON, replace-all per media item) |
 | GET | `/api/export` | Full metadata export (`?format=json\|csv\|markers-csv`, `?lib=name`) |
 | GET/HEAD | `/stream/:id` | Range-based media streaming (`410 Gone` if the file is missing) |

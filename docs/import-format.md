@@ -7,7 +7,7 @@ markers on individual media items.
 ## CSV Metadata Import
 
 **Endpoint:** `POST /api/import`
-**UI:** Library page → Import button → paste CSV text
+**UI:** Settings overlay (gear icon) → Import → Import Metadata (CSV) → paste CSV text
 
 ### Format
 
@@ -97,6 +97,57 @@ curl -X POST http://localhost:32411/api/import \
   ]
 }
 ```
+
+## Markers CSV Import (Bulk)
+
+Distinct from the per-item *marker text import* below: this is a bulk,
+cross-library CSV importer, the inverse of `GET /api/export?format=markers-csv`.
+It exists to round-trip markers (backup/restore, or relinking after a
+file move).
+
+**Endpoint:** `POST /api/import/markers`
+**UI:** Settings overlay (gear icon) → Import → Import Markers (CSV) → paste CSV text
+
+### Format
+
+```csv
+filename,rel_path,start,end,label
+"Artist1 - Set (2024).mp4","Artist1/Artist1 - Set (2024).mp4",0,225,Track One
+"Artist1 - Set (2024).mp4","Artist1/Artist1 - Set (2024).mp4",225,440,Track Two
+```
+
+| Column | Notes |
+|--------|-------|
+| `filename` | Basename with extension. Fallback match key. |
+| `rel_path` | Path within the library. Primary match key. |
+| `start` | Marker start, in seconds. Rows where this isn't finite are dropped. |
+| `end` | Marker end, in seconds. Optional (blank = point marker). |
+| `label` | Marker text. Rows with an empty label are dropped. |
+
+### Matching and Semantics
+
+- Rows are grouped by media (`rel_path`, falling back to `filename`), matched
+  `rel_path` first then `filename`. Matching is **not** scoped by library, so
+  basenames/paths should be unique across libraries (a shared `rel_path` binds
+  to the first matching row).
+- **Replace-all per matched file:** for each file present in the CSV, all of its
+  existing markers are deleted and the CSV's rows are inserted. Files *not* in
+  the CSV are untouched. There is no merge/append mode. This is destructive and
+  cannot be undone — the UI gates it behind a two-click confirm.
+- Markers are sorted by `start` before insertion. (Unlike the per-item text
+  importer, the bulk importer does **not** apply overlap-repair.)
+- A CSV with no `start`/`label` columns is rejected (it would otherwise delete
+  every matched file's markers and insert nothing). Conversely the metadata
+  importer rejects a markers-shaped CSV.
+
+### Response
+
+```json
+{ "matched": 44, "skipped": 0, "markerCount": 840, "errors": [] }
+```
+
+`matched` counts files; `markerCount` counts inserted markers; `skipped` counts
+CSV media keys that matched no row; `errors` are `{ key, error }` objects.
 
 ## Marker Text Import
 

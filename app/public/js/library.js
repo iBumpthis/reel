@@ -27,7 +27,11 @@ const elImportText = document.getElementById('importText');
 const elImportBtn = document.getElementById('importBtn');
 const elImportStatus = document.getElementById('importStatus');
 const elImportResult = document.getElementById('importResult');
-const elImportLink = document.getElementById('importLink');
+const elMarkerImportOverlay = document.getElementById('markerImportOverlay');
+const elMarkerImportText = document.getElementById('markerImportText');
+const elMarkerImportBtn = document.getElementById('markerImportBtn');
+const elMarkerImportStatus = document.getElementById('markerImportStatus');
+const elMarkerImportResult = document.getElementById('markerImportResult');
 const elSidebar = document.getElementById('sidebar');
 const elSidebarToggle = document.getElementById('sidebarToggle');
 const elSidebarLibraries = document.getElementById('sidebarLibraries');
@@ -37,7 +41,8 @@ const elSettingsBtn = document.getElementById('settingsBtn');
 const elSettingsOverlay = document.getElementById('settingsOverlay');
 const elHelpBtn = document.getElementById('helpBtn');
 const elHelpOverlay = document.getElementById('helpOverlay');
-const elHelpLink = document.getElementById('helpLink');
+const elOpenMetaImportBtn = document.getElementById('openMetaImportBtn');
+const elOpenMarkerImportBtn = document.getElementById('openMarkerImportBtn');
 const elFullScanBtn = document.getElementById('fullScanBtn');
 const elPurgeBtn = document.getElementById('purgeBtn');
 const elViewMissingLink = document.getElementById('viewMissingLink');
@@ -630,10 +635,6 @@ function openHelp() {
   elHelpOverlay.classList.remove('hidden');
 }
 elHelpBtn.addEventListener('click', openHelp);
-elHelpLink.addEventListener('click', (e) => {
-  e.preventDefault();
-  openHelp();
-});
 
 // Full Metadata Scan — close the panel, then reuse the scan progress UI.
 elFullScanBtn.addEventListener('click', () => {
@@ -720,8 +721,13 @@ elViewMissingLink.addEventListener('click', async (e) => {
 // ============================================================
 // CSV Import
 // ============================================================
-elImportLink.addEventListener('click', (e) => {
-  e.preventDefault();
+// Open the metadata import overlay from the Settings → Import row.
+elOpenMetaImportBtn.addEventListener('click', () => {
+  elSettingsOverlay.classList.add('hidden');
+  resetSettings();
+  elImportStatus.textContent = '';
+  elImportResult.classList.add('hidden');
+  elImportResult.innerHTML = '';
   elImportOverlay.classList.remove('hidden');
 });
 
@@ -758,6 +764,84 @@ elImportBtn.addEventListener('click', async () => {
     elImportStatus.textContent = `Error: ${err.message}`;
   } finally {
     elImportBtn.disabled = false;
+  }
+});
+
+// ============================================================
+// Markers CSV Import (bulk, replace-all per matched file)
+// ============================================================
+// Opens from the Settings → Import row. Two-click confirm mirrors Purge
+// Missing: the action is destructive (it deletes every matched file's existing
+// markers before inserting the CSV's rows), so the first click only arms.
+let markerImportArmed = false;
+
+function resetMarkerImportBtn() {
+  markerImportArmed = false;
+  elMarkerImportBtn.textContent = 'Import & replace markers';
+  elMarkerImportBtn.classList.remove('btn-danger-armed');
+  elMarkerImportBtn.disabled = false;
+}
+
+elOpenMarkerImportBtn.addEventListener('click', () => {
+  elSettingsOverlay.classList.add('hidden');
+  resetSettings();
+  resetMarkerImportBtn();
+  elMarkerImportStatus.textContent = '';
+  elMarkerImportResult.classList.add('hidden');
+  elMarkerImportResult.innerHTML = '';
+  elMarkerImportOverlay.classList.remove('hidden');
+});
+
+// Editing the payload after arming invalidates the pending confirm.
+elMarkerImportText.addEventListener('input', () => {
+  if (markerImportArmed) resetMarkerImportBtn();
+});
+
+elMarkerImportBtn.addEventListener('click', async () => {
+  const text = elMarkerImportText.value.trim();
+  if (!text) {
+    elMarkerImportStatus.textContent = 'Paste a markers CSV first';
+    return;
+  }
+
+  // First click arms; second click executes the destructive import.
+  if (!markerImportArmed) {
+    markerImportArmed = true;
+    elMarkerImportBtn.textContent = 'Confirm — replace markers';
+    elMarkerImportBtn.classList.add('btn-danger-armed');
+    return;
+  }
+
+  elMarkerImportBtn.disabled = true;
+  elMarkerImportBtn.textContent = 'Importing…';
+  elMarkerImportStatus.textContent = 'Importing…';
+
+  try {
+    const result = await api.importMarkers({ csv: text });
+    const parts = [];
+    if (result.matched > 0) parts.push(`${result.matched} file${result.matched !== 1 ? 's' : ''} matched`);
+    if (result.markerCount > 0) parts.push(`${result.markerCount} marker${result.markerCount !== 1 ? 's' : ''}`);
+    if (result.skipped > 0) parts.push(`${result.skipped} skipped`);
+    if (result.errors?.length > 0) parts.push(`${result.errors.length} error${result.errors.length !== 1 ? 's' : ''}`);
+    const msg = parts.join(', ') || 'No matching files';
+    elMarkerImportStatus.textContent = msg;
+    toast(`Markers: ${msg}`, result.errors?.length ? 'error' : 'success');
+
+    if (result.errors?.length) {
+      elMarkerImportResult.classList.remove('hidden');
+      elMarkerImportResult.innerHTML = result.errors.map(e => {
+        const detail = typeof e === 'string' ? e : (e.error || e.key || JSON.stringify(e));
+        return `<div class="import-preview-row import-result-error">${escHtml(String(detail))}</div>`;
+      }).join('');
+    }
+
+    await refreshSidebarData();
+    loadLibrary();
+  } catch (err) {
+    elMarkerImportStatus.textContent = `Error: ${err.message}`;
+    toast(`Markers import failed: ${err.message}`, 'error');
+  } finally {
+    resetMarkerImportBtn();
   }
 });
 
@@ -814,6 +898,9 @@ document.addEventListener('keydown', (e) => {
     } else if (!elSettingsOverlay.classList.contains('hidden')) {
       elSettingsOverlay.classList.add('hidden');
       resetSettings();
+    } else if (!elMarkerImportOverlay.classList.contains('hidden')) {
+      elMarkerImportOverlay.classList.add('hidden');
+      resetMarkerImportBtn();
     } else if (!elImportOverlay.classList.contains('hidden')) {
       elImportOverlay.classList.add('hidden');
     } else if (elSidebar.classList.contains('open')) {
