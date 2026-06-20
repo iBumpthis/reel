@@ -277,6 +277,11 @@ async function loadLibrary(append = false) {
 
     if (!append) {
       elMediaGrid.innerHTML = '';
+      // Keep the active-filter chips in sync with the loaded state on every
+      // fresh load — not just the in-session click handlers that call this
+      // explicitly. Without it, a deep-link entry (?artist=…) applies the
+      // filter but renders no chip, leaving no in-context way to clear it.
+      renderActiveFilters();
     }
 
     if (data.items.length === 0 && !append) {
