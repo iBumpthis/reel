@@ -651,6 +651,48 @@ only ever a discussion example).
   literal, solo alias). Existing `deepEqual` cases updated for the expanded
   return shape.
 
+### v1.12.0 — Usability Polish: Search Clear + In-App Help
+
+Frontend-only polish pass. No schema migration, no backend or scanner changes —
+markup, client JS, CSS, and docs only.
+
+- **Search clear button.** The header search box gains a clear (✕) affordance
+  that appears only when the box has content. Clicking it wipes the query,
+  reloads immediately (an explicit action, so it bypasses the 250 ms input
+  debounce), and returns focus to the box. The inconsistent native WebKit search
+  cancel button (`::-webkit-search-cancel-button`) is suppressed in favor of this
+  custom control. Visibility is centralized in a `syncSearchClear()` helper so the
+  existing `Esc`-to-clear path and the button stay in sync.
+- **In-app Help overlay.** A static reference panel reachable from a header `?`
+  icon or a footer link, built on the existing Settings-overlay pattern (same
+  `.overlay` / `.settings-section` markup and the shared `[data-close]` handler —
+  no new overlay machinery). Three sections:
+  - **Library shortcuts** — `/` to focus search, `Esc` to clear/close.
+  - **Player shortcuts** — mirrors the player's `keydown` switch exactly,
+    including `Shift+V` / `Shift+T` reverse-cycle for visualizer mode and theme.
+  - **Filename conventions** — solo, b2b, and `[GROUP]` alias grammar, using the
+    generic placeholders (`Artist1`, `GROUP`) per the docs convention, plus a note
+    that search unifies solo + b2b discovery.
+- **Docs.** README's Library Page section documents the clear button, the `/` and
+  `Esc` library shortcuts, and the Help panel; the Player Page hotkey line is
+  corrected to include the `Shift+V` / `Shift+T` reverse-cycle the code already
+  implements (previously undocumented).
+- **Housekeeping.** `app/package-lock.json` root self-version, which had drifted
+  to 1.10.0 (the 1.11.0 bump missed it — b2b added no dependencies), is brought
+  current to 1.12.0. No dependency versions changed.
+- **Tests.** No new tests — the changes are DOM/CSS with no unit-testable logic in
+  the zero-dependency harness. Suite unchanged at **52 pass / 0 fail / 21 skip**.
+
+#### Carried-open verification (not a code gap)
+
+- **Full Metadata Scan positive path** — the COALESCE refresh contract
+  (`title = COALESCE(@meta_title, title)`, etc.) is already covered by
+  `app/test/full-metadata.test.js`: overwrite-when-present, preserve-when-absent
+  (does **not** blank an existing value when the embedded tag is null), per-field
+  mixing, and missing-row reactivation. The only piece not exercisable in the dev
+  container is the real-file `music-metadata` read; that remains a live spot-check
+  on knope, not a code change.
+
 ---
 
 ## Planned

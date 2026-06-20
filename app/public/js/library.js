@@ -12,6 +12,7 @@ import * as api from './shared/api.js';
 const elVersion = document.getElementById('appVersion');
 const elFooterVersion = document.getElementById('footerVersion');
 const elSearchInput = document.getElementById('searchInput');
+const elSearchClear = document.getElementById('searchClear');
 const elScanBtn = document.getElementById('scanBtn');
 const elScanStatus = document.getElementById('scanStatus');
 const elSortField = document.getElementById('sortField');
@@ -34,6 +35,9 @@ const elSidebarArtists = document.getElementById('sidebarArtists');
 const elSidebarTags = document.getElementById('sidebarTags');
 const elSettingsBtn = document.getElementById('settingsBtn');
 const elSettingsOverlay = document.getElementById('settingsOverlay');
+const elHelpBtn = document.getElementById('helpBtn');
+const elHelpOverlay = document.getElementById('helpOverlay');
+const elHelpLink = document.getElementById('helpLink');
 const elFullScanBtn = document.getElementById('fullScanBtn');
 const elPurgeBtn = document.getElementById('purgeBtn');
 const elViewMissingLink = document.getElementById('viewMissingLink');
@@ -621,6 +625,16 @@ elSettingsBtn.addEventListener('click', () => {
   elSettingsOverlay.classList.remove('hidden');
 });
 
+// Help overlay — static reference panel (shortcuts + filename grammar).
+function openHelp() {
+  elHelpOverlay.classList.remove('hidden');
+}
+elHelpBtn.addEventListener('click', openHelp);
+elHelpLink.addEventListener('click', (e) => {
+  e.preventDefault();
+  openHelp();
+});
+
 // Full Metadata Scan — close the panel, then reuse the scan progress UI.
 elFullScanBtn.addEventListener('click', () => {
   elSettingsOverlay.classList.add('hidden');
@@ -752,7 +766,27 @@ elImportBtn.addEventListener('click', async () => {
 // ============================================================
 const reloadDebounced = debounce(() => loadLibrary(), 250);
 
-elSearchInput.addEventListener('input', reloadDebounced);
+// Toggle the clear (X) affordance based on whether the box has content.
+// Centralized so programmatic clears (Esc handler, clear button) stay in sync
+// with typed input.
+function syncSearchClear() {
+  elSearchClear.classList.toggle('hidden', elSearchInput.value === '');
+}
+
+elSearchInput.addEventListener('input', () => {
+  syncSearchClear();
+  reloadDebounced();
+});
+
+// Clear button: wipe the query, reload immediately (not debounced — it's an
+// explicit action), and return focus to the box for the next search.
+elSearchClear.addEventListener('click', () => {
+  elSearchInput.value = '';
+  syncSearchClear();
+  elSearchInput.focus();
+  loadLibrary();
+});
+
 elSortField.addEventListener('change', () => loadLibrary());
 elSortOrder.addEventListener('change', () => loadLibrary());
 
@@ -775,7 +809,9 @@ document.addEventListener('keydown', (e) => {
     elSearchInput.focus();
   }
   if (e.key === 'Escape') {
-    if (!elSettingsOverlay.classList.contains('hidden')) {
+    if (!elHelpOverlay.classList.contains('hidden')) {
+      elHelpOverlay.classList.add('hidden');
+    } else if (!elSettingsOverlay.classList.contains('hidden')) {
       elSettingsOverlay.classList.add('hidden');
       resetSettings();
     } else if (!elImportOverlay.classList.contains('hidden')) {
@@ -784,6 +820,7 @@ document.addEventListener('keydown', (e) => {
       closeSidebar();
     } else if (document.activeElement === elSearchInput) {
       elSearchInput.value = '';
+      syncSearchClear();
       elSearchInput.blur();
       loadLibrary();
     }
