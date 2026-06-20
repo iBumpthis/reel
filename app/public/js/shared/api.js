@@ -142,6 +142,21 @@ export function importData(body) {
   });
 }
 
+/**
+ * POST /api/import/markers → bulk marker import from a markers CSV.
+ * DESTRUCTIVE per matched file: replaces ALL of that file's markers with the
+ * CSV's rows for it (existing markers deleted first). Files absent from the CSV
+ * are left untouched. Columns: filename, rel_path, start, end, label.
+ * @returns {Promise<{matched, skipped, markerCount, errors}>}
+ */
+export function importMarkers(body) {
+  return request('/api/import/markers', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
 /** GET /api/export → metadata dump */
 export function exportData(params = {}) {
   const url = new URL('/api/export', location.origin);

@@ -701,6 +701,51 @@ markup, client JS, CSS, and docs only.
   container is the real-file `music-metadata` read; that remains a live spot-check
   on knope, not a code change.
 
+### v1.13.0 — Import/Export Consolidation + Markers Import UI
+
+Closes the top-priority import-UX gap surfaced during the Mixtapes marker
+migration: a markers CSV pasted into the only CSV-import UI silently no-op'd
+through the *metadata* importer and reported success. The fix consolidates all
+data operations into the Settings overlay, gives the (previously UI-less)
+bulk markers importer a front end, and makes mis-routed CSVs fail loudly.
+
+- **Settings overlay is now the home for all data operations.** Three sections —
+  **Import** (Import Metadata CSV, Import Markers CSV), **Export** (Metadata
+  CSV/JSON, Markers CSV), and the existing **Maintenance** (Full Metadata Scan,
+  Purge Missing) — built on the existing `.settings-row` pattern. Maintenance
+  stays visually last so the destructive `btn-danger` Purge isn't adjacent to a
+  paste box. The footer is reduced to the version string; its scattered Help /
+  Import CSV / Export links are gone (Help remains the header `?` icon).
+- **Markers CSV import UI (new).** `POST /api/import/markers` finally has a front
+  end: a paste overlay opened from Settings → Import. Because the endpoint is
+  **replace-all per matched file** (it deletes a matched file's existing markers
+  before inserting the CSV's rows), the import button uses a **two-click confirm**
+  mirroring Purge Missing, and the copy spells out the destructive, can't-be-undone
+  behaviour. Editing the textarea after arming re-requires confirmation.
+- **Mis-paste guards (both directions).** The metadata importer (`POST /api/import`)
+  now rejects a markers-shaped CSV (`start`/`end`/`label`, no metadata columns)
+  with a 400 instead of matching rows and reporting a hollow success. The markers
+  importer rejects a CSV lacking `start`/`label` — without this, a metadata CSV
+  pasted there would delete every matched file's markers and insert nothing (a
+  silent wipe). Both guards bail before touching the DB. Shape detection is
+  factored into exported `hasMarkerColumns` / `hasMetadataColumns` helpers.
+- **CSV parser rewrite (latent-bug fix).** `parseCsv` previously split on
+  `\r?\n` *before* parsing quotes, so a quoted field containing a newline (a
+  marker label pasted from a multi-line tracklist) mis-parsed. It's now a
+  single-pass, quote-aware tokenizer that preserves embedded newlines and handles
+  `""` escaping and LF/CRLF/lone-CR endings. Strictly a superset of prior
+  behaviour; the dead `parseCSVLine` helper is removed.
+- **Docs.** README's feature list, Import/Export prose, and API table document
+  `/api/import/markers` and the Settings-overlay location; `docs/import-format.md`
+  gains a full **Markers CSV Import (Bulk)** section and a corrected metadata-import
+  UI pointer.
+- **Version.** `package.json` + both root entries of `package-lock.json` bumped
+  to 1.13.0. No dependency versions changed; no schema migration.
+- **Tests.** New `app/test/import-csv.test.js` covers the tokenizer (embedded
+  newline, quoted comma, escaped quote, CRLF, blank-line drop, header-only) and
+  the shape detectors / guard logic against pure exported functions (no DB, no
+  skips). Suite: **63 pass / 0 fail / 21 skip** (was 52/0/21; +11 new).
+
 ---
 
 ## Planned
