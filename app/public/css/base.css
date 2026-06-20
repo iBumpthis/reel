@@ -116,19 +116,19 @@ h1, h2, h3 {
 
 /* App shell */
 .app-header {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr minmax(160px, 300px) 1fr;
   align-items: center;
-  justify-content: space-between;
   padding: 12px 20px;
   border-bottom: 1px solid var(--border-subtle);
   gap: 16px;
-  flex-wrap: wrap;
 }
 
 .app-header-left {
   display: flex;
   align-items: baseline;
   gap: 8px;
+  justify-self: start;
 }
 
 .app-title {
@@ -161,6 +161,7 @@ h1, h2, h3 {
   display: flex;
   align-items: center;
   gap: 10px;
+  justify-self: end;
 }
 
 .app-content {
@@ -178,6 +179,11 @@ h1, h2, h3 {
 }
 
 @media (max-width: 640px) {
-  .app-header { padding: 10px 14px; }
+  .app-header {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    padding: 10px 14px;
+  }
   .app-content { padding: 12px 14px 32px; }
 }

@@ -349,6 +349,14 @@ textarea.mono {
   flex-direction: column;
   gap: 4px;
 }
+/* Separate stacked sections (Help overlay has three; Settings has one, so this
+   adjacent-sibling rule never fires there). Gives each heading clear top
+   breathing room instead of jamming against the prior section. */
+.settings-section + .settings-section {
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border-subtle);
+}
 .settings-heading {
   font-size: 0.786rem;
   text-transform: uppercase;

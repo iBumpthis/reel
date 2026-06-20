@@ -663,10 +663,18 @@ markup, client JS, CSS, and docs only.
   cancel button (`::-webkit-search-cancel-button`) is suppressed in favor of this
   custom control. Visibility is centralized in a `syncSearchClear()` helper so the
   existing `Esc`-to-clear path and the button stay in sync.
+- **Header layout.** The header moves from a two-zone flex (`space-between`) to a
+  three-column grid (`1fr · search · 1fr`) so the search box is pinned to the
+  centre of the page regardless of left/right content widths. The right cluster
+  is ordered `[Scan] [Help] [Settings]` — the destructive-adjacent Settings
+  (which holds Purge) sits furthest from the primary Scan action. Below 640px the
+  header reverts to a flex row with the search wrapping full-width underneath.
 - **In-app Help overlay.** A static reference panel reachable from a header `?`
   icon or a footer link, built on the existing Settings-overlay pattern (same
   `.overlay` / `.settings-section` markup and the shared `[data-close]` handler —
-  no new overlay machinery). Three sections:
+  no new overlay machinery). Stacked sections are separated by an adjacent-sibling
+  divider (`.settings-section + .settings-section`), which doesn't fire in the
+  single-section Settings overlay. Three sections:
   - **Library shortcuts** — `/` to focus search, `Esc` to clear/close.
   - **Player shortcuts** — mirrors the player's `keydown` switch exactly,
     including `Shift+V` / `Shift+T` reverse-cycle for visualizer mode and theme.
