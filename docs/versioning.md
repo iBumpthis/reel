@@ -727,8 +727,15 @@ bulk markers importer a front end, and makes mis-routed CSVs fail loudly.
   with a 400 instead of matching rows and reporting a hollow success. The markers
   importer rejects a CSV lacking `start`/`label` — without this, a metadata CSV
   pasted there would delete every matched file's markers and insert nothing (a
-  silent wipe). Both guards bail before touching the DB. Shape detection is
-  factored into exported `hasMarkerColumns` / `hasMetadataColumns` helpers.
+  silent wipe). Both also reject **zero-parsed-records** input (a lone line with
+  no header row — e.g. a stray search query pasted by accident — parses to no
+  rows; previously this looped over nothing and toasted "Done"). All guards bail
+  before touching the DB. Shape detection is factored into exported
+  `hasMarkerColumns` / `hasMetadataColumns` helpers.
+- **Loud client-side outcomes.** Both import overlays now toast `success` only
+  when at least one item actually matched (and there were no errors); a
+  matched:0 result or a 4xx rejection toasts `error` and surfaces the server
+  message, so a no-op can no longer read as a win.
 - **CSV parser rewrite (latent-bug fix).** `parseCsv` previously split on
   `\r?\n` *before* parsing quotes, so a quoted field containing a newline (a
   marker label pasted from a multi-line tracklist) mis-parsed. It's now a
@@ -744,7 +751,7 @@ bulk markers importer a front end, and makes mis-routed CSVs fail loudly.
 - **Tests.** New `app/test/import-csv.test.js` covers the tokenizer (embedded
   newline, quoted comma, escaped quote, CRLF, blank-line drop, header-only) and
   the shape detectors / guard logic against pure exported functions (no DB, no
-  skips). Suite: **63 pass / 0 fail / 21 skip** (was 52/0/21; +11 new).
+  skips). Suite: **64 pass / 0 fail / 21 skip** (was 52/0/21; +12 new).
 
 ---
 

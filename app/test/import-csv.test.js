@@ -53,6 +53,14 @@ test('parseCsv: header only yields no records', () => {
   assert.deepEqual(parseCsv('filename,title'), []);
 });
 
+test('parseCsv: a single non-CSV line yields no records (route 400s on this)', () => {
+  // A lone line (e.g. a search query pasted by accident) has no data row, so it
+  // parses to []. The import routes reject records.length === 0 rather than
+  // looping over nothing and reporting a hollow matched:0 success.
+  assert.deepEqual(parseCsv('Trappin in Japan - Volume 26'), []);
+  assert.deepEqual(parseCsv(''), []);
+});
+
 test('hasMarkerColumns: true for a markers CSV, false for metadata', () => {
   const markers = parseCsv('filename,rel_path,start,end,label\nm.mp4,a/m.mp4,0,10,Track');
   const meta = parseCsv('filename,title,artist\nm.mp4,Title,Artist');

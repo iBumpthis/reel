@@ -747,9 +747,10 @@ elImportBtn.addEventListener('click', async () => {
     if (result.matched > 0) parts.push(`${result.matched} matched`);
     if (result.skipped > 0) parts.push(`${result.skipped} skipped`);
     if (result.errors?.length > 0) parts.push(`${result.errors.length} errors`);
-    const msg = parts.join(', ') || 'Done';
+    const msg = parts.join(', ') || 'Nothing to import';
     elImportStatus.textContent = msg;
-    toast(`Import: ${msg}`, result.errors?.length ? 'error' : 'success');
+    const ok = result.matched > 0 && !result.errors?.length;
+    toast(`Import: ${msg}`, ok ? 'success' : 'error');
 
     if (result.errors?.length) {
       elImportResult.classList.remove('hidden');
@@ -762,6 +763,7 @@ elImportBtn.addEventListener('click', async () => {
     loadLibrary();
   } catch (err) {
     elImportStatus.textContent = `Error: ${err.message}`;
+    toast(`Import failed: ${err.message}`, 'error');
   } finally {
     elImportBtn.disabled = false;
   }
@@ -825,7 +827,8 @@ elMarkerImportBtn.addEventListener('click', async () => {
     if (result.errors?.length > 0) parts.push(`${result.errors.length} error${result.errors.length !== 1 ? 's' : ''}`);
     const msg = parts.join(', ') || 'No matching files';
     elMarkerImportStatus.textContent = msg;
-    toast(`Markers: ${msg}`, result.errors?.length ? 'error' : 'success');
+    const ok = result.matched > 0 && !result.errors?.length;
+    toast(`Markers: ${msg}`, ok ? 'success' : 'error');
 
     if (result.errors?.length) {
       elMarkerImportResult.classList.remove('hidden');
