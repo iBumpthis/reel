@@ -797,6 +797,74 @@ bulk markers importer a front end, and makes mis-routed CSVs fail loudly.
 
 ---
 
+### v1.14.0 — Artist Normalization, Stage A (`media_artists` additive schema)
+
+Stage A of the `media_artists` arc: a many-to-many `media ↔ artists` relation
+that becomes the **relational** source of truth for artist membership.
+**Additive and non-breaking** — no read path changes in this release.
+`media.artist` is deliberately kept as the denormalized **display / full-text
+search** projection (it is FTS-indexed, read on every card, the facet/sort
+column, the inline-edit target, and for b2b sets holds the rebuilt display
+string). Stage A only *populates* the new relation; Stage B repoints the artist
+facet and `artist=` filter through it (next session).
+
+- **Migration `005-media-artists.sql`** (additive). New `artists` table
+  (`id`, `name`, `normalized UNIQUE`) and `media_artists` junction
+  (`media_id`/`artist_id` composite PK, both `ON DELETE CASCADE`), plus
+  `idx_media_artists_artist` for the reverse (artist → media) lookup Stage B's
+  facet needs. The forward lookup is already covered by the composite PK prefix.
+  Cascade is benign under soft-delete (004): media rows aren't hard-deleted on a
+  normal scan, so links only clear on a deliberate purge-missing — which *should*
+  drop them.
+- **`normalized` is case-PRESERVING in Stage A** (`normalized = name`, not
+  `lower(name)`). Folding casings here would silently merge `Rezz`/`REZZ` and
+  change facet behaviour vs. today's exact-match column — that is Stage C's job
+  (canonical/alias layer), not a free cleanup. Distinct casings therefore create
+  distinct `artists` rows — *no worse than today's exact-match facet.*
+- **Population precedence** (faithful projection of the existing display logic):
+  b2b multiplicity always comes from the **filename** (`parsed.artists` — an
+  embedded ID3/M4A tag collapses a set to a flat string and can't express it);
+  a solo member is the **display artist** (the stored `media.artist`,
+  i.e. embedded-tag-wins-else-filename). Alias (`[WANKDAT]`) stays a *tag* in
+  Stage A; Stage C promotes it to a canonical label over the member set.
+- **New module `services/artists.js`** (dependency-free, mirrors `metadata.js`).
+  Holds the shared `deriveArtistNames` + the DB helpers so the artist logic is
+  importable for unit tests **without** pulling in the scanner's
+  `music-metadata`/`better-sqlite3` chain (which would break the suite's
+  run-with-skips-even-without-`npm install` property). The scanner and the
+  backfill both call `deriveArtistNames`, so they can never diverge.
+- **Scanner dual-write** is **diff-and-replace, not accretive.** `syncArtistLinks`
+  reads a row's current link set and rewrites only when it actually differs —
+  zero writes on the common unchanged re-scan. A plain `INSERT OR IGNORE` would
+  *accrete* stale members: on a normal re-scan embedded tags aren't re-read for
+  known files, so the parsed filename artist differs from the embedded value that
+  first won `media.artist`, and a second wrong link would stick. The member is
+  derived from the **post-upsert stored `media.artist`** (consistent across
+  new / normal / force-metadata paths and identical to what the backfill reads).
+- **One-time backfill** (`backfillArtists`, DB-only — zero NAS I/O; re-parses the
+  stored `filename` column). Runs once at startup on the deploy that ships 005,
+  guarded on "`media_artists` empty while `media` non-empty," so it populates
+  links immediately without forcing a scan and never fights the scanner on later
+  boots. The whole pass is wrapped in one transaction.
+- **Tests.** `app/test/media-artists.test.js`: 5 pure `deriveArtistNames` cases
+  (run unconditionally) + 9 DB-backed cases under the standard better-sqlite3
+  graceful-skip — migration applies / `schema_version` = 5; solo → 1; b2b → N
+  with a shared artist row; **accretion regression** (changed display *replaces*,
+  not accretes); distinct casings → distinct rows; idempotent no-op; purge
+  cascade clears links; backfill populates + one-shot guard; backfill no-op on
+  empty. Migration chain + logic also validated end-to-end via `node:sqlite`
+  (better-sqlite3 can't build natively in-sandbox — documented pattern).
+  Suite: **73 pass / 0 fail / 30 skip** (was 68/0/21; +5 pure, +9 DB-gated).
+- **Version.** `package.json` + both root entries of `package-lock.json` bumped
+  to 1.14.0. No dependency changes.
+
+**Smoke-test gate before Stage B:** migration 005 applies on the real DB;
+backfill populates `media_artists` (spot-check a b2b file → N member rows, a solo
+file → 1); a normal scan refreshes links idempotently; **existing facet / search
+/ cards visibly unchanged** (still read `media.artist`).
+
+---
+
 ## Planned
 
 ### Data Durability (continued, post-1.10.0)

@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 import { loadConfig, syncLibraries } from './config.js';
 import { openDatabase } from './db/index.js';
+import { backfillArtists } from './services/artists.js';
 import healthRoutes from './routes/health.js';
 import streamRoutes from './routes/stream.js';
 import libraryRoutes from './routes/library.js';
@@ -19,6 +20,10 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const config = loadConfig();
 const db = openDatabase(config.dbPath);
 syncLibraries(db, config);
+// One-time media_artists backfill (migration 005). Guarded internally: only
+// runs when the link table is empty but media exists, so it populates on the
+// deploy that ships 005 and is a no-op thereafter. DB-only, no NAS reads.
+backfillArtists(db, config);
 
 const app = Fastify({ logger: true });
 

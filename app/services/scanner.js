@@ -2,6 +2,7 @@ import { readdir, stat, realpath } from 'node:fs/promises';
 import { join, relative, extname, basename } from 'node:path';
 import { mediaTypeForExt } from './mime.js';
 import { parseFilename } from './metadata.js';
+import { deriveArtistNames, makeArtistStmts, syncArtistLinks } from './artists.js';
 import { parseFile } from 'music-metadata';
 
 /** Audio extensions where embedded tag reading is worthwhile. */
@@ -202,6 +203,14 @@ export async function scanLibraries(config, db, options = {}) {
   const linkTag = db.prepare('INSERT OR IGNORE INTO media_tags (media_id, tag_id) VALUES (@media_id, @tag_id)');
   const getMediaByPath = db.prepare('SELECT id, present FROM media WHERE abs_path = ?');
 
+  // Artist-link (media_artists, migration 005) prepared statements + the
+  // authoritative post-upsert display-artist read. See syncArtistLinks for why
+  // the SOLO member is derived from the stored media.artist column rather than
+  // the freshly-parsed value: it keeps the relational projection idempotent and
+  // identical to the backfill across re-scans / metadata refreshes / edits.
+  const artistStmts = makeArtistStmts(db);
+  const getArtistByPath = db.prepare('SELECT artist FROM media WHERE abs_path = ?');
+
   let totalUpserts = 0;
   let totalMissing = 0;
   let totalReactivated = 0;
@@ -392,6 +401,20 @@ export async function scanLibraries(config, db, options = {}) {
         if (b2bTagging && parsed.alias) {
           applyTag(parsed.alias, mediaId, findTag, insertTag, linkTag);
         }
+
+        // Artist links (media_artists, migration 005). The RELATIONAL projection
+        // of the artist(s) for this row. Runs in the always-runs region (like
+        // the b2b/alias tags) so a normal scan keeps existing rows' links in
+        // sync too. SOLO membership is taken from the stored display column
+        // (read back post-upsert) — NOT the freshly-parsed value — so it equals
+        // exactly what the card/facet shows AND matches the backfill, and stays
+        // stable across re-scans where the embedded tag isn't re-read. b2b
+        // multiplicity always comes from the filename (parsed.artists); the
+        // embedded tag can't structurally express a set. Alias is NOT a member
+        // (it stays a tag, above). syncArtistLinks only writes when the link set
+        // actually changed — no churn on a no-op re-scan.
+        const storedArtist = getArtistByPath.get(absPath)?.artist ?? null;
+        syncArtistLinks(mediaId, deriveArtistNames(parsed, storedArtist), artistStmts);
 
         libUpserts++;
       }
