@@ -548,7 +548,6 @@ with appropriate HTTP status codes.
 | GET | `/api/scan/missing` | Count of retained-but-missing rows (`{ count }`) |
 | POST | `/api/scan/purge-missing` | Permanently delete all missing rows (cascades markers + tags) — `{ ok, purged }` |
 | POST | `/api/import` | Bulk metadata import (CSV or JSON) |
-| POST | `/api/import/markers` | Bulk marker import from CSV (replace-all per matched file) |
 | POST | `/api/import/markers` | Bulk marker import (CSV or JSON, replace-all per media item) |
 | GET | `/api/export` | Full metadata export (`?format=json\|csv\|markers-csv`, `?lib=name`) |
 | GET/HEAD | `/stream/:id` | Range-based media streaming (`410 Gone` if the file is missing) |

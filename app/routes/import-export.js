@@ -229,7 +229,7 @@ export default async function importExportRoutes(fastify) {
     // Replace-all semantics mean a CSV lacking start/label would DELETE every
     // matched file's existing markers and insert nothing — a silent marker
     // wipe. Bail before touching the DB.
-    if (records.length && !hasMarkerColumns(records)) {
+    if (!hasMarkerColumns(records)) {
       return reply.code(400).send({
         error: 'This CSV has no start/label columns — expected a markers CSV (filename, rel_path, start, end, label). Nothing was changed.',
       });
@@ -327,7 +327,9 @@ export function parseCsv(text) {
     // quoted field's record.
     if (values.length === 1 && values[0].trim() === '') continue;
     const obj = {};
-    headers.forEach((h, idx) => { obj[h] = (values[idx] ?? '').trim(); });
+    headers.forEach((h, idx) => {
+      obj[h] = unescapeCsvFormulaGuard((values[idx] ?? '').trim());
+    });
     records.push(obj);
   }
 
@@ -423,7 +425,39 @@ export function hasMetadataColumns(records) {
  */
 const CSV_FORMULA_CHARS = new Set(['=', '+', '-', '@']);
 
-function toCsv(rows) {
+/**
+ * Reverse, on import, the formula-injection guard toCsv applies on export.
+ * toCsv prefixes a single leading apostrophe to any field whose first char is a
+ * formula trigger (= + - @); without stripping it back off, an export→import
+ * round-trip is NOT lossless. The guard is applied via the shared escape() path
+ * so it hits every column, including the identity columns filename/rel_path:
+ *
+ *   - Silent match failure (the dangerous half): a file named `-Foo` or under a
+ *     folder starting with @/-/=/+ exports its key as `'-Foo` / `'@…`; the
+ *     importer then matches the literal apostrophe'd key against the un-guarded
+ *     DB value, finds nothing, and skips the row (counted in `skipped`, not
+ *     `errors`). Exactly the shape of name the Music library carries.
+ *   - Value corruption: a label/title like `=ID= Drop` accretes an apostrophe
+ *     each cycle, permanently becoming `'=ID= Drop`.
+ *
+ * Stripping here — in parseCsv, the shared inverse of toCsv — closes both. The
+ * only false positive is a value that LITERALLY begins `'=`/`'-`/`'+`/`'@` in
+ * the DB: its real leading apostrophe is removed. But such a value is never
+ * guarded on export in the first place (its first char is the apostrophe, not a
+ * formula char), so the round-trip would mangle it regardless; the case is
+ * vanishingly rare for media metadata and is the accepted tradeoff.
+ *
+ * JSON imports bypass parseCsv entirely and never passed through toCsv, so they
+ * are unaffected.
+ */
+function unescapeCsvFormulaGuard(s) {
+  if (s.length >= 2 && s[0] === "'" && CSV_FORMULA_CHARS.has(s[1])) {
+    return s.slice(1);
+  }
+  return s;
+}
+
+export function toCsv(rows) {
   if (rows.length === 0) return '';
   const headers = Object.keys(rows[0]);
   const escape = (v) => {

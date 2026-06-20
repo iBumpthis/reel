@@ -9,7 +9,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseCsv, hasMarkerColumns, hasMetadataColumns } from '../routes/import-export.js';
+import { parseCsv, toCsv, hasMarkerColumns, hasMetadataColumns } from '../routes/import-export.js';
 
 test('parseCsv: basic header + rows', () => {
   const recs = parseCsv('filename,title\na.mp4,Hello\nb.mp4,World');
@@ -86,4 +86,57 @@ test('shape guard logic: a markers CSV is rejected by the metadata importer', ()
 test('shape guard logic: a normal metadata CSV passes the metadata importer', () => {
   const meta = parseCsv('filename,title,artist,year,album,track_number,description,tags\nm.mp4,T,A,2024,Al,1,desc,tag');
   assert.equal(hasMarkerColumns(meta) && !hasMetadataColumns(meta), false);
+});
+
+// ---------------------------------------------------------------------------
+// BUG-1 regression: the CSV formula-injection guard must round-trip losslessly.
+//
+// toCsv prefixes a leading apostrophe to any field starting with = + - @ (OWASP
+// CSV-injection mitigation) via the shared escape path, so it also touches the
+// identity columns filename/rel_path. Before the fix, parseCsv never reversed
+// it: an `@`/`-`-leading filename exported as `'@…`/`'-…` and then failed the
+// literal key match on re-import (a SILENT skip — counted in `skipped`, not
+// `errors`), and a formula-leading label accreted an apostrophe each cycle.
+// These exercise the real toCsv→parseCsv cycle as pure functions (no DB).
+// ---------------------------------------------------------------------------
+
+test('round-trip: @/-leading filename + =-leading label survive toCsv→parseCsv byte-identical', () => {
+  // The dangerous case: identity keys that begin with a formula char (exactly
+  // the shape the Music library carries) must come back out unchanged, or the
+  // markers/metadata round-trip silently skips them.
+  const original = [
+    { filename: '-Foo.mp4', rel_path: '@artist/-Foo.mp4', start: '0', label: '=ID= Drop' },
+    { filename: '+Bar.mp4', rel_path: 'normal/+Bar.mp4', start: '10', label: 'Plain Label' },
+  ];
+  const recs = parseCsv(toCsv(original));
+  assert.equal(recs.length, 2);
+  assert.deepEqual(recs[0], original[0], 'formula-leading key + label must round-trip unchanged');
+  assert.deepEqual(recs[1], original[1]);
+});
+
+test('round-trip: a formula-leading key matches its own un-guarded DB value after import', () => {
+  // The silent-skip half stated directly: what comes back out of parseCsv must
+  // equal the original DB value the importer matches against, with no stray
+  // apostrophe. If this regresses, findByRelPath/findByFilename miss and the row
+  // is skipped, not errored.
+  const dbValue = '@eaDir/-RL Grime - Halloween (2019).mp4';
+  const recs = parseCsv(toCsv([{ rel_path: dbValue, start: '0', label: 'x' }]));
+  assert.equal(recs[0].rel_path, dbValue);
+});
+
+test('round-trip: ordinary values are untouched by the guard reversal', () => {
+  // The un-escape must not strip a legitimate leading apostrophe that is NOT
+  // followed by a formula char (e.g. a label like "'Til the drop").
+  const original = [{ filename: 'a.mp4', title: "'Til the drop", artist: "O'Brien" }];
+  const recs = parseCsv(toCsv(original));
+  assert.deepEqual(recs[0], original[0]);
+});
+
+test("toCsv: still guards formula-leading fields on export (mitigation intact)", () => {
+  // The fix reverses the guard on import; it must not have removed the guard on
+  // export. A field starting with `=` is still emitted apostrophe-prefixed.
+  const csv = toCsv([{ filename: 'a.mp4', label: '=cmd' }]);
+  // header line + one data line; the label cell carries the leading apostrophe.
+  const dataLine = csv.split('\n')[1];
+  assert.ok(dataLine.includes("'=cmd"), 'export must still neutralize the formula char');
 });

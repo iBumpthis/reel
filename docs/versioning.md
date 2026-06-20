@@ -701,6 +701,48 @@ markup, client JS, CSS, and docs only.
   container is the real-file `music-metadata` read; that remains a live spot-check
   on knope, not a code change.
 
+### v1.13.1 — CSV Round-Trip Fix (Formula Guard) + Tidy-Ups
+
+A post-1.13.0 code review caught one genuine correctness bug in the headline
+import/export work, fixed here along with two doc/code tidy-ups. No schema
+change, no new dependencies.
+
+- **CSV formula-injection guard is now reversed on import (the bug).** `toCsv`
+  prefixes a leading apostrophe to any field starting with `= + - @` (OWASP
+  CSV-injection mitigation), applied via the shared escape path so it also
+  touches the identity columns `filename`/`rel_path`. `parseCsv` never undid it,
+  so an export→import cycle was **not lossless**:
+  - *Silent match failure (the dangerous half):* a file named `-Foo` or under a
+    folder starting with `@`/`-`/`=`/`+` exported its key as `'-Foo`/`'@…`; on
+    re-import the literal apostrophe'd key failed to match the un-guarded DB
+    value, so the row was **silently skipped** (counted in `skipped`, not
+    `errors`). This is exactly the shape of name the Music library carries —
+    contradicting the "markers round-trip is sound end to end" claim.
+  - *Value corruption:* a label/title like `=ID= Drop` accreted an apostrophe
+    each cycle, permanently becoming `'=ID= Drop`.
+
+  Fixed at the root by stripping exactly one leading `'` when the next char is a
+  formula trigger, inside `parseCsv` — the shared inverse of `toCsv`, so it
+  covers both importers symmetrically. The export-side guard is unchanged
+  (still neutralizes formula chars in spreadsheets). JSON imports bypass
+  `parseCsv` and are unaffected. The only false positive is a value literally
+  beginning `'=`/`'-`/`'+`/`'@` in the DB — never guarded on export anyway, and
+  vanishingly rare for media metadata; the accepted tradeoff.
+- **Tidy-ups.** Dropped the duplicate `POST /api/import/markers` row from the
+  README API table; removed the redundant `records.length &&` from the markers
+  importer's shape guard (`records.length` is already guaranteed non-zero by the
+  preceding early return).
+- **`toCsv` is now exported** so the regression test can drive the real
+  export→import cycle rather than re-implementing it.
+- **Tests.** `app/test/import-csv.test.js` gains four pure-function round-trip
+  cases: an `@`/`-`-leading filename + `=`-leading label survive `toCsv→parseCsv`
+  byte-identical; a formula-leading key matches its own DB value after import; an
+  ordinary leading apostrophe (`'Til the drop`) is left untouched; and the
+  export-side guard is confirmed still intact. Suite: **68 pass / 0 fail / 21
+  skip** (was 64/0/21; +4 new).
+- **Version.** `package.json` + both root entries of `package-lock.json` bumped
+  to 1.13.1.
+
 ### v1.13.0 — Import/Export Consolidation + Markers Import UI
 
 Closes the top-priority import-UX gap surfaced during the Mixtapes marker
