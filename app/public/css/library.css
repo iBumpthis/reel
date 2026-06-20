@@ -8,7 +8,7 @@
   position: relative;
   display: inline-flex;
   align-items: center;
-  width: 260px;
+  width: 100%;
   max-width: 100%;
 }
 .search-input {
