@@ -19,6 +19,16 @@ export default async function importExportRoutes(fastify) {
       });
     }
 
+    // Nothing parsed — e.g. a single line with no header, or otherwise
+    // unrecognizable input. parseCsv needs a header row plus >=1 data row, so
+    // a lone line yields []. Fail loudly instead of looping over nothing and
+    // returning a hollow matched:0 "success."
+    if (records.length === 0) {
+      return reply.code(400).send({
+        error: 'No importable rows found — paste a CSV with a header row and at least one data row.',
+      });
+    }
+
     // Reject a marker-shaped CSV pasted into the metadata importer. Without
     // this, marker rows match by filename, run updateMeta with all-undefined
     // metadata columns (COALESCE no-ops, nothing blanked), skip the tag block,
@@ -204,6 +214,14 @@ export default async function importExportRoutes(fastify) {
     } else {
       return reply.code(400).send({
         error: 'Body must be CSV text, JSON array, or { csv: "..." }',
+      });
+    }
+
+    // Nothing parsed (lone line / no header / unrecognizable). Fail loudly
+    // rather than returning a hollow matched:0 success.
+    if (records.length === 0) {
+      return reply.code(400).send({
+        error: 'No importable rows found — paste a markers CSV with a header row and at least one data row.',
       });
     }
 
