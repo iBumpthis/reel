@@ -4,9 +4,48 @@
    ============================================================ */
 
 /* --- Search input (header) --- */
-.search-input {
+.search-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
   width: 260px;
   max-width: 100%;
+}
+.search-input {
+  width: 100%;
+  /* room for the clear affordance so query text never slides under it */
+  padding-right: 30px;
+}
+/* Suppress the inconsistent native search clear (WebKit) in favor of ours. */
+.search-input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+}
+.search-clear {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  font-size: 0.8rem;
+  line-height: 1;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.search-clear:hover {
+  background: var(--bg-surface-hover);
+  border: none;
+  color: var(--text-primary);
 }
 
 /* --- Sidebar toggle (header) --- */
@@ -466,7 +505,7 @@
 }
 
 @media (max-width: 640px) {
-  .search-input {
+  .search-wrap {
     width: 100%;
     order: 10;
   }

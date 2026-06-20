@@ -35,14 +35,25 @@
     </div>
     <div class="app-header-right">
       <button id="scanBtn">Scan</button>
+      <button id="helpBtn" class="btn-icon" title="Help &amp; shortcuts" aria-label="Help">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true">
+          <circle cx="12" cy="12" r="10"/>
+          <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
+          <line x1="12" y1="17" x2="12.01" y2="17"/>
+        </svg>
+      </button>
       <button id="settingsBtn" class="btn-icon" title="Settings &amp; maintenance" aria-label="Settings">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true">
           <circle cx="12" cy="12" r="3"/>
           <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
         </svg>
       </button>
-      <input type="search" id="searchInput" class="search-input"
-             placeholder="Search library..." autocomplete="off">
+      <div class="search-wrap">
+        <input type="search" id="searchInput" class="search-input"
+               placeholder="Search library..." autocomplete="off">
+        <button type="button" id="searchClear" class="search-clear hidden"
+                title="Clear search" aria-label="Clear search">&#10005;</button>
+      </div>
     </div>
   </header>
 
@@ -123,6 +134,83 @@
     </div>
   </div>
 
+  <!-- Help overlay -->
+  <div id="helpOverlay" class="overlay hidden">
+    <div class="overlay-backdrop" data-close="helpOverlay"></div>
+    <div class="overlay-panel">
+      <div class="overlay-header">
+        <span class="overlay-title">Help &amp; Shortcuts</span>
+        <button class="overlay-close" data-close="helpOverlay">&#10005;</button>
+      </div>
+
+      <div class="settings-section">
+        <h3 class="settings-heading">Library Shortcuts</h3>
+        <dl class="help-keys">
+          <dt><kbd>/</kbd></dt>
+          <dd>Focus the search box</dd>
+          <dt><kbd>Esc</kbd></dt>
+          <dd>Close an overlay, the sidebar, or clear/blur the focused search box</dd>
+        </dl>
+      </div>
+
+      <div class="settings-section">
+        <h3 class="settings-heading">Player Shortcuts</h3>
+        <dl class="help-keys">
+          <dt><kbd>Space</kbd></dt>
+          <dd>Play / pause</dd>
+          <dt><kbd>&larr;</kbd> <kbd>&rarr;</kbd></dt>
+          <dd>Seek &minus;/&plus; 5 seconds</dd>
+          <dt><kbd>&uarr;</kbd> <kbd>&darr;</kbd></dt>
+          <dd>Volume up / down</dd>
+          <dt><kbd>M</kbd></dt>
+          <dd>Mute / unmute</dd>
+          <dt><kbd>F</kbd></dt>
+          <dd>Toggle fullscreen</dd>
+          <dt><kbd>V</kbd> <span class="help-key-alt">/ <kbd>Shift</kbd>+<kbd>V</kbd></span></dt>
+          <dd>Enter visualizer, then cycle mode forward (Shift = backward)</dd>
+          <dt><kbd>T</kbd> <span class="help-key-alt">/ <kbd>Shift</kbd>+<kbd>T</kbd></span></dt>
+          <dd>Cycle color theme forward (Shift = backward)</dd>
+          <dt><kbd>G</kbd></dt>
+          <dd>Toggle Trails (frame-persistence) in visualizer mode</dd>
+          <dt><kbd>Esc</kbd></dt>
+          <dd>Close an open overlay</dd>
+        </dl>
+      </div>
+
+      <div class="settings-section">
+        <h3 class="settings-heading">Filename Conventions</h3>
+        <p class="settings-row-desc help-intro">
+          Reel reads artist, title, and year from the filename. Embedded ID3 /
+          M4A tags take priority for audio when present; the filename is the
+          fallback (and the only source for video).
+        </p>
+        <dl class="help-grammar">
+          <dt><code>Artist - Event (YYYY).ext</code></dt>
+          <dd>Solo set. Artist before the dash, year in trailing parens.</dd>
+          <dt><code>Artist1 b2b Artist2 - Event (YYYY).ext</code></dt>
+          <dd>
+            Back-to-back set. Any number of <code>b2b</code> participants; each is
+            split into its own artist and tagged individually, plus a literal
+            <code>b2b</code> tag. The <code>b2b</code> delimiter is
+            whitespace-bounded, so it won't fire on a substring inside a name.
+          </dd>
+          <dt><code>Artist1 b2b Artist2 [GROUP] - Event (YYYY).ext</code></dt>
+          <dd>
+            b2b set with a collective act / alias name in trailing brackets,
+            placed on the artist side <em>before</em> the <code>-</code>. The
+            alias is stripped from the displayed artist chain and surfaced as its
+            own one-click tag. Brackets after the dash stay literal title text.
+          </dd>
+        </dl>
+        <p class="settings-row-desc help-note">
+          To find every set an artist appears in &mdash; solo <em>and</em> b2b
+          &mdash; use the search box. It matches both the artist column and tag
+          names, so each participant tokenizes out of a joined b2b display string.
+        </p>
+      </div>
+    </div>
+  </div>
+
   <!-- Settings overlay -->
   <div id="settingsOverlay" class="overlay hidden">
     <div class="overlay-backdrop" data-close="settingsOverlay"></div>
@@ -172,6 +260,7 @@
 
   <footer class="app-footer">
     Reel <span id="footerVersion">—</span>
+    &nbsp;|&nbsp; <a href="#" id="helpLink">Help</a>
     &nbsp;|&nbsp; <a href="#" id="importLink">Import CSV</a>
     &nbsp;|&nbsp; <a href="/api/export?format=json" target="_blank">Export JSON</a>
     &nbsp;|&nbsp; <a href="/api/export?format=markers-csv" target="_blank">Export Markers CSV</a>

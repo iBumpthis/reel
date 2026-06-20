@@ -229,6 +229,8 @@ trigger it.
 Browse, search, filter, and edit your media collection. Features include:
 
 - Full-text search across filenames, titles, artists, and descriptions
+- Clear (✕) button in the search box, plus <kbd>/</kbd> to focus it and
+  <kbd>Esc</kbd> to clear it
 - Sidebar browse panel with artists, tags, and libraries
 - Filter by clicking artists, tags, or libraries in the sidebar
 - Sort by title, artist, year, modification time, size, or creation date
@@ -236,6 +238,8 @@ Browse, search, filter, and edit your media collection. Features include:
 - Inline metadata editing (title, artist, year, description, tags)
 - Tag autocomplete from existing tags
 - CSV metadata import for bulk updates
+- In-app **Help** panel (header `?` icon or footer link): keyboard-shortcut and
+  filename-convention reference
 
 ### Player Page
 
@@ -257,7 +261,7 @@ Click any media item to open the player. Features include:
 - Inline marker editing (label and timestamp) and deletion
 - Marker text import (paste a tracklist)
 - Marker export to clipboard
-- Keyboard shortcuts: Space (play/pause), ←/→ (±5s), ↑/↓ (volume), M (mute), F (fullscreen), V (cycle viz mode), T (cycle theme), G (toggle Trails)
+- Keyboard shortcuts: Space (play/pause), ←/→ (±5s), ↑/↓ (volume), M (mute), F (fullscreen), V / Shift+V (cycle viz mode forward/back), T / Shift+T (cycle theme forward/back), G (toggle Trails)
 
 ## Security Model
 
