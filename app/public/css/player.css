@@ -626,6 +626,24 @@
   line-height: 1.3;
 }
 
+/* Artist deep links in the title. The base `a` rule paints them full accent,
+   which reads as jarring next to the plain "b2b"/title text — especially with
+   two linked members in a b2b set. Keep them in the title colour with a subtle
+   underline so they still register as links, and reveal the accent on hover.
+   (To restore the accent at rest instead, drop the color/decoration overrides
+   and keep only the :hover rule.) */
+.player-meta h1 .player-artist-link {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 28%, transparent);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.player-meta h1 .player-artist-link:hover {
+  color: var(--accent);
+  text-decoration-color: var(--accent);
+}
+
 .player-actions {
   display: flex;
   gap: 8px;
