@@ -47,6 +47,48 @@ api.getHealth().then(d => {
 const id = new URLSearchParams(location.search).get('id');
 state.mediaId = id;
 
+/**
+ * Build the artist portion of the player title as per-member deep links into
+ * the filtered library (Stage B). `members` is the relational artist list
+ * (media.artists); `displayArtist` is the rendered string (media.artist), which
+ * for a b2b set is the members joined by the configured separator in filename
+ * order. We walk the display string and link each member where it appears,
+ * keeping the literal separators as plain text — so the visible label is byte-
+ * identical to the old fused string, just with the artist(s) now clickable.
+ *
+ * Safe degradation: with no structured members (solo-from-filename, or a hand-
+ * edited display that hasn't been re-synced into the relation), or if any member
+ * can't be located in the display string, the whole artist renders as plain
+ * text with no links rather than risk a garbled or dead-ended link.
+ */
+function buildArtistNodes(displayArtist, members) {
+  const frag = document.createDocumentFragment();
+  if (!Array.isArray(members) || members.length === 0) {
+    frag.appendChild(document.createTextNode(displayArtist));
+    return frag;
+  }
+  const out = document.createDocumentFragment();
+  let remaining = displayArtist;
+  for (const name of members) {
+    const idx = remaining.indexOf(name);
+    if (idx === -1) {
+      // Display drifted from the relation — fall back to plain text entirely.
+      const plain = document.createDocumentFragment();
+      plain.appendChild(document.createTextNode(displayArtist));
+      return plain;
+    }
+    if (idx > 0) out.appendChild(document.createTextNode(remaining.slice(0, idx)));
+    const a = document.createElement('a');
+    a.href = `/?artist=${encodeURIComponent(name)}`;
+    a.className = 'player-artist-link';
+    a.textContent = name;
+    out.appendChild(a);
+    remaining = remaining.slice(idx + name.length);
+  }
+  if (remaining) out.appendChild(document.createTextNode(remaining));
+  return out;
+}
+
 async function load() {
   if (!id) {
     els.playerTitle.textContent = 'No media selected';
@@ -59,11 +101,18 @@ async function load() {
     state.fileExt = (media.ext || '').toLowerCase();
     state.markers = media.markers || [];
 
-    // Title display
+    // Title display. The artist portion is rendered as per-member deep links
+    // into the filtered library (/?artist=<name>); a b2b set gets one link per
+    // member. media.artists (relational, Stage B) drives the links; the display
+    // string is walked to reconstruct separators. document.title stays plain.
     const display = media.title || media.filename;
-    els.playerTitle.textContent = media.artist
-      ? `${media.artist} — ${display}`
-      : display;
+    els.playerTitle.textContent = '';
+    if (media.artist) {
+      els.playerTitle.appendChild(buildArtistNodes(media.artist, media.artists));
+      els.playerTitle.appendChild(document.createTextNode(` — ${display}`));
+    } else {
+      els.playerTitle.textContent = display;
+    }
     const parts = [media.year, media.libraryName, (media.ext || '').toUpperCase()].filter(Boolean);
     els.playerSub.textContent = parts.join(' · ');
 

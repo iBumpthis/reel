@@ -123,12 +123,25 @@ function renderSidebarLibraries() {
   }
 }
 
+/**
+ * Keep the URL's ?artist param in sync with the active artist filter, so the
+ * library is refresh-safe and shareable and the player→library deep link round-
+ * trips. replaceState (not push) — sidebar toggling shouldn't spam history.
+ */
+function syncArtistUrl() {
+  const url = new URL(location.href);
+  if (activeArtistFilter) url.searchParams.set('artist', activeArtistFilter);
+  else url.searchParams.delete('artist');
+  history.replaceState(null, '', url);
+}
+
 function renderSidebarArtists() {
   elSidebarArtists.innerHTML = '';
 
   const allItem = createSidebarItem('All artists', null, !activeArtistFilter);
   allItem.addEventListener('click', () => {
     activeArtistFilter = null;
+    syncArtistUrl();
     renderSidebarArtists();
     renderActiveFilters();
     loadLibrary();
@@ -139,6 +152,7 @@ function renderSidebarArtists() {
     const item = createSidebarItem(a.name, a.count, activeArtistFilter === a.name);
     item.addEventListener('click', () => {
       activeArtistFilter = activeArtistFilter === a.name ? null : a.name;
+      syncArtistUrl();
       renderSidebarArtists();
       renderActiveFilters();
       loadLibrary();
@@ -199,6 +213,7 @@ function renderActiveFilters() {
   if (activeArtistFilter) {
     elActiveFilters.appendChild(createFilterChip('Artist', activeArtistFilter, () => {
       activeArtistFilter = null;
+      syncArtistUrl();
       renderSidebarArtists();
       renderActiveFilters();
       loadLibrary();
@@ -937,6 +952,11 @@ async function refreshSidebarData() {
 // Init
 // ============================================================
 async function init() {
+  // Deep-link entry: a ?artist=<name> param (e.g. from a player artist link)
+  // pre-sets the filter before the first render so the library lands filtered.
+  // Case-exact, matching the facet/filter (Stage A invariant).
+  const initialArtist = new URLSearchParams(location.search).get('artist');
+  if (initialArtist) activeArtistFilter = initialArtist;
   await refreshSidebarData();
   await loadLibrary();
 }

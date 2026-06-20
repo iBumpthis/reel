@@ -26,6 +26,18 @@ export default async function mediaRoutes(fastify) {
     ORDER BY t.name ASC
   `);
 
+  // Relational artist members (media_artists, migration 005). This is the SAME
+  // source the artist facet/filter read from (Stage B), so a per-member deep
+  // link built from it always lands on a populated filtered view. The SELECT
+  // order is arbitrary; buildResponse re-orders by position in the display
+  // string so the player can reconstruct "A b2b B" with each member linked.
+  const getArtistMembers = db.prepare(`
+    SELECT a.name
+    FROM media_artists ma
+    JOIN artists a ON a.id = ma.artist_id
+    WHERE ma.media_id = ?
+  `);
+
   // FTS sync is handled by the media_fts_au trigger (migration 003): the
   // UPDATE below fires it automatically, and only when an FTS-indexed column
   // actually changes. No manual rebuild.
@@ -44,6 +56,22 @@ export default async function mediaRoutes(fastify) {
     }));
     const tags = getTags.all(row.id).map(t => ({ id: t.id, name: t.name }));
 
+    // Ordered artist members for the player's per-member deep links. The display
+    // string (media.artist) for a b2b set is members.join(b2bJoin) in filename
+    // order, so ordering the relation's members by their position in that string
+    // reproduces display order; members absent from the display (e.g. an inline
+    // artist edit not yet re-synced into the relation by a rescan) sort last and
+    // the player falls back to plain text for the unmatched portion.
+    const displayArtist = row.artist ?? parsed.artist;
+    const memberNames = getArtistMembers.all(row.id).map(r => r.name);
+    const artists = displayArtist
+      ? memberNames.slice().sort((x, y) => {
+          const ix = displayArtist.indexOf(x);
+          const iy = displayArtist.indexOf(y);
+          return (ix < 0 ? Infinity : ix) - (iy < 0 ? Infinity : iy);
+        })
+      : memberNames;
+
     return {
       id: row.id,
       libraryName: row.library_name,
@@ -56,6 +84,7 @@ export default async function mediaRoutes(fastify) {
       mtimeMs: row.mtime_ms,
       title: row.title ?? parsed.title,
       artist: row.artist ?? parsed.artist,
+      artists,
       year: row.year ?? parsed.year,
       album: row.album ?? null,
       trackNumber: row.track_number ?? null,
