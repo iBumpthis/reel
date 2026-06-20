@@ -135,6 +135,16 @@ artist column (full-text) as well as tags, so `artist2` returns both a solo Wool
 set and any b2b set Wooli is in. The `b2b` tag itself is a one-click filter for
 all back-to-back sets.
 
+> **Artist data model.** As of v1.14.0 a relational `media_artists` table is the
+> source of truth for *which artists a file belongs to* (one row per membership,
+> so a b2b set links to each participant individually). `media.artist` is kept as
+> the denormalized **display / full-text-search** value — it is what shows on the
+> card, what the artist facet and sort read, and the inline-edit target. The
+> artist *facet* and `artist=` *filter* still read `media.artist` (so the
+> search-box workaround above is the current way to unify solo + b2b); repointing
+> them through `media_artists` — which removes b2b facet fragmentation and powers
+> an artist→library link — is the next stage of the arc.
+
 If an artist name contains a `-`, remove it from the filename for correct
 parsing (the first ` - ` is the artist/title separator) and re-add it via the
 metadata editor.
@@ -593,7 +603,9 @@ VA-API hardware acceleration is enabled. See
 
 - **Runtime:** Node.js 24 LTS
 - **Framework:** Fastify 5
-- **Database:** SQLite via better-sqlite3 (with FTS5 for full-text search)
+- **Database:** SQLite via better-sqlite3 (with FTS5 for full-text search;
+  artist membership is normalized into a relational `media_artists` table, with
+  `media.artist` retained as the denormalized display/FTS projection)
 - **Frontend:** Vanilla JS, HTML, CSS (no build step, no framework)
 - **Container:** Docker on node:24-slim
 
