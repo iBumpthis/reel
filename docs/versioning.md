@@ -1074,6 +1074,20 @@ schema, no API, no scanner change.
   (a per-file action doesn't belong in a global menu, and burying Import would
   hide the primary way to populate a file that has no markers yet).
 
+### v1.17.1 — Header control height (v1.17.0 follow-up)
+
+Once Browse sat next to the new Help icon on the player header, a height mismatch
+surfaced: Browse was a `.btn-sm` (~26px) while the icon button is 32px. It was
+invisible before only because Browse had nothing beside it. Two changes, both
+header-only:
+
+- Player Browse uses the plain `.btn` (matching index's Scan), not `.btn-sm`, so
+  it shares the header button language across pages.
+- A header-scoped `min-height: 32px` on `.app-header-right > button` aligns text
+  and icon buttons exactly and keeps any future top-bar control uniform. The
+  smaller `.btn-sm` buttons elsewhere (collapse / Export / Import / Description)
+  are unaffected.
+
 ## Planned
 
 ### Data Durability (continued, post-1.10.0)
