@@ -171,6 +171,16 @@ h1, h2, h3 {
   grid-column: 3;
 }
 
+/* Uniform control height in the header. The icon button (.btn-icon) is 32px;
+   text buttons (Browse, Scan) are a hair shorter, which only became visible once
+   Browse sat next to the help icon on the player. Normalising here keeps every
+   top-bar control aligned regardless of its base class, and future additions
+   line up automatically. Header-scoped, so the smaller .btn-sm buttons elsewhere
+   (collapse / Export / Import / Description) are untouched. */
+.app-header-right > button {
+  min-height: 32px;
+}
+
 .app-content {
   max-width: 1400px;
   margin: 0 auto;
