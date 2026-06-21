@@ -293,8 +293,8 @@ Browse, search, filter, and edit your media collection. Features include:
 - Inline metadata editing (title, artist, year, description, tags)
 - Tag autocomplete from existing tags
 - Bulk CSV import/export for metadata and markers, in the Settings overlay
-- In-app **Help** panel (header `?` icon): keyboard-shortcut and
-  filename-convention reference
+- In-app **Help** panel (header `?` icon, on both the library and player
+  headers): keyboard-shortcut and filename-convention reference
 
 ### Player Page
 

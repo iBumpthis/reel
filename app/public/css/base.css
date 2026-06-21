@@ -162,6 +162,13 @@ h1, h2, h3 {
   align-items: center;
   gap: 10px;
   justify-self: end;
+  /* Pin to the third grid track so the controls sit at the header's true right
+     edge. On index this is a no-op (the right block is already the 3rd child,
+     after left + centre search). On the player the header has only two children,
+     so without this the right block auto-places into the CENTRE track and
+     justify-self:end pins it to that track's edge, not the header's (REEL-001).
+     Ignored under the max-width:640px flex fallback, so mobile is unaffected. */
+  grid-column: 3;
 }
 
 .app-content {

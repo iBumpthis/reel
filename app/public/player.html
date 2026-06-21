@@ -26,6 +26,13 @@
       <span class="app-version" id="appVersion">—</span>
     </div>
     <div class="app-header-right">
+      <button id="helpBtn" class="btn-icon" title="Help &amp; shortcuts" aria-label="Help">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" width="18" height="18" aria-hidden="true">
+          <circle cx="12" cy="12" r="10"/>
+          <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
+          <line x1="12" y1="17" x2="12.01" y2="17"/>
+        </svg>
+      </button>
       <button id="browseBtn" class="btn btn-sm">Browse</button>
     </div>
   </header>
@@ -217,11 +224,14 @@
           <div class="text-muted text-sm" id="playerSub"></div>
         </div>
 
-        <!-- Action buttons -->
+        <!-- Action buttons. Description is a per-file action; Export/Import are
+             grouped as marker actions (divider mirrors the visualizer toolbar). -->
         <div class="player-actions">
           <button class="btn btn-sm" id="openDescOverlay">Description</button>
-          <button class="btn btn-sm" id="exportMarkers">Export Markers</button>
-          <button class="btn btn-sm" id="openImportOverlay">Import Markers</button>
+          <div class="player-actions-markers">
+            <button class="btn btn-sm" id="exportMarkers">Export Markers</button>
+            <button class="btn btn-sm" id="openImportOverlay">Import Markers</button>
+          </div>
         </div>
 
         <!-- Description display (read-only) -->

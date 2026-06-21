@@ -9,6 +9,12 @@ import { cleanupVisualizer } from './visualizer.js';
 import { initModes, setMode, cycleVizStyle, cycleTheme, toggleTrails } from './modes.js';
 import { initMarkers, cleanupMarkers } from './markers.js';
 import { initBrowse } from './browse.js';
+import { installHelpOverlay } from '../shared/help-overlay.js';
+
+// Help overlay (shared module — same panel as the library). Injects #helpOverlay
+// and self-wires the header button + close. The player's generic Esc handler
+// closes it like any other .overlay.
+installHelpOverlay('helpBtn');
 
 // ============================================================
 // Shared state — modules get a reference to this
@@ -31,6 +37,7 @@ export const els = {
   vizCanvas: document.getElementById('vizCanvas'),
   playerTitle: document.getElementById('playerTitle'),
   playerSub: document.getElementById('playerSub'),
+  exportMarkers: document.getElementById('exportMarkers'),
   toastContainer: document.getElementById('toastContainer'),
 };
 
@@ -138,6 +145,7 @@ async function load() {
     state.media = media;
     state.fileExt = (media.ext || '').toLowerCase();
     state.markers = media.markers || [];
+    syncExportEnabled();
 
     // Title display. The artist portion is rendered as per-member deep links
     // into the filtered library (/?artist=<name>); a b2b set gets one link per
@@ -342,6 +350,13 @@ function initDescription() {
 // ============================================================
 // Export markers
 // ============================================================
+// Grey out Export when there are no markers to export — the empty state
+// shouldn't offer a no-op action. Reuses the existing button:disabled style
+// (opacity 0.4 + not-allowed). Called after load and after an import re-sync.
+function syncExportEnabled() {
+  if (els.exportMarkers) els.exportMarkers.disabled = !(state.markers && state.markers.length);
+}
+
 function initExportMarkers() {
   document.getElementById('exportMarkers').addEventListener('click', async () => {
     if (!state.markers || state.markers.length === 0) {
@@ -413,6 +428,7 @@ function initImport() {
       state.media = media;
       state.markers = media.markers || [];
       initMarkers(state, els);
+      syncExportEnabled();
     } catch (err) {
       elImportStatus.textContent = `Error: ${err.message}`;
     } finally {

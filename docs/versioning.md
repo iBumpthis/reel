@@ -1037,6 +1037,43 @@ casing fold:
   `media-artists.test.js` gains `deriveArtistMembers` coverage. C1 fold tests,
   card display, sort, and FTS unchanged.
 
+### v1.17.0 — UX polish pass (player header, artist legibility, shared Help)
+
+A consolidated UX pass on top of the completed artist arc. Frontend-only — no
+schema, no API, no scanner change.
+
+- **Player header alignment (REEL-001).** The Browse control now sits at the
+  header's true right edge. The shared `.app-header` is a three-column grid built
+  for index's centred search; player.html's header has only two children, so the
+  right block was auto-placing into the centre track and pinning to *its* edge.
+  Fixed with `grid-column: 3` on `.app-header-right` — a no-op on index (already
+  the third child) and ignored under the mobile flex fallback.
+- **Artist-list legibility.** Sidebar artist rows go from `0.857rem` to
+  `0.92rem`, vertical padding `5px → 6px`, and the rest-state colour is lifted
+  halfway from `--text-secondary` toward `--text-primary` (via `color-mix`). The
+  old size + muted colour + tight spacing read as cramped in a long list; this
+  spends some density for readability deliberately. Hover/active states unchanged.
+- **Help on the player.** The Help & Shortcuts panel — whose largest section is
+  *Player Shortcuts* — is now reachable from the player header, not just the
+  library. It's extracted into a shared module (`js/shared/help-overlay.js`) so
+  index and player render the **same** panel from one source (no drift); the
+  module injects the overlay and self-wires open/close. The filename-grammar
+  section was corrected: a bracketed alias is now described as a browsable **act**
+  (its own artist-list entry, marked *act*) as well as a tag, matching C2.
+- **Marker actions grouped.** Export / Import Markers are wrapped in a sub-cluster
+  with the same divider treatment as the visualizer toolbar, so they read as
+  marker actions distinct from the per-file Description button rather than an
+  orphaned row.
+- **Export disabled at zero markers.** Export Markers greys out (reusing the
+  existing `:disabled` style) when the open file has no markers, so the empty
+  state doesn't offer a no-op. Re-enables after a successful import.
+- **Deferred (by decision).** Bringing Settings to the player was considered and
+  deferred: it's currently library-maintenance (Full Metadata Scan, Purge
+  Missing — destructive) and belongs with the future settings-menu arc, not on a
+  single-file page. Export/Import were deliberately **not** moved under Settings
+  (a per-file action doesn't belong in a global menu, and burying Import would
+  hide the primary way to populate a file that has no markers yet).
+
 ## Planned
 
 ### Data Durability (continued, post-1.10.0)

@@ -672,6 +672,17 @@
   margin-top: 10px;
 }
 
+/* Marker actions (Export / Import) grouped as a sub-cluster distinct from the
+   per-file Description button. Same divider treatment as the visualizer toolbar
+   (.viz-modifiers): a left border + lead padding so the pair reads as one unit
+   rather than an orphaned row. */
+.player-actions-markers {
+  display: flex;
+  gap: 8px;
+  padding-left: 10px;
+  border-left: 1px solid var(--border-subtle);
+}
+
 /* Description read-only display */
 .desc-display {
   margin-top: 10px;

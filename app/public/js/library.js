@@ -5,6 +5,7 @@
  */
 import { fmtBytes, debounce, escHtml, toast } from './shared/utils.js';
 import * as api from './shared/api.js';
+import { installHelpOverlay } from './shared/help-overlay.js';
 
 // ============================================================
 // DOM refs
@@ -39,8 +40,10 @@ const elSidebarArtists = document.getElementById('sidebarArtists');
 const elSidebarTags = document.getElementById('sidebarTags');
 const elSettingsBtn = document.getElementById('settingsBtn');
 const elSettingsOverlay = document.getElementById('settingsOverlay');
-const elHelpBtn = document.getElementById('helpBtn');
-const elHelpOverlay = document.getElementById('helpOverlay');
+// Help overlay is now a SHARED module (one source of truth across index +
+// player). installHelpOverlay injects #helpOverlay and self-wires the button +
+// close; we keep the returned element for the Esc handler below.
+const elHelpOverlay = installHelpOverlay('helpBtn').overlay;
 const elOpenMetaImportBtn = document.getElementById('openMetaImportBtn');
 const elOpenMarkerImportBtn = document.getElementById('openMarkerImportBtn');
 const elFullScanBtn = document.getElementById('fullScanBtn');
@@ -655,12 +658,6 @@ elSettingsBtn.addEventListener('click', () => {
   resetSettings();
   elSettingsOverlay.classList.remove('hidden');
 });
-
-// Help overlay — static reference panel (shortcuts + filename grammar).
-function openHelp() {
-  elHelpOverlay.classList.remove('hidden');
-}
-elHelpBtn.addEventListener('click', openHelp);
 
 // Full Metadata Scan — close the panel, then reuse the scan progress UI.
 elFullScanBtn.addEventListener('click', () => {
