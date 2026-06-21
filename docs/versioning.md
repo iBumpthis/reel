@@ -1088,6 +1088,16 @@ header-only:
   smaller `.btn-sm` buttons elsewhere (collapse / Export / Import / Description)
   are unaffected.
 
+### v1.17.2 — Card title overflow on mobile (v1.17.0 follow-up)
+
+A long media-card title could overhang the card on a narrow (single-column)
+mobile viewport. `.card-title` lives in the `.card-title-row` flex and carries
+`overflow:hidden; text-overflow:ellipsis`, but a flex child defaults to
+`min-width:auto` — so it never shrank below its content and the title forced the
+row wider than the card instead of truncating. Adding `min-width: 0` lets the
+ellipsis engage. Invisible on desktop (wide columns absorb it); the fix is
+correct at every width and changes nothing for titles that already fit.
+
 ## Planned
 
 ### Data Durability (continued, post-1.10.0)
