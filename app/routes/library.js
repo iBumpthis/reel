@@ -97,16 +97,18 @@ export default async function libraryRoutes(fastify) {
       params.ext = ext.toLowerCase();
     }
     if (artist) {
-      // Membership test against the relational artist model (media_artists,
-      // migration 005) instead of `m.artist = @artist`. The exact-string match
-      // only hit the display column, so filtering "Excision" missed every
-      // "Excision b2b …" set; the relation resolves b2b participation. a.name is
-      // case-exact (Stage A invariant) — do NOT lower() here; "Rezz" ≠ "REZZ".
-      // The value passed is the artist name surfaced by /api/artists, which the
-      // sidebar keys on directly.
+      // Membership test against the relational artist model (media_artists, 005)
+      // resolved through the CANONICAL row (006): match any media linked to an
+      // artist whose canonical name equals the (canonical) value the facet
+      // emitted. So filtering "Rezz" returns "REZZ"-cased files too, and an act
+      // (C2) returns its set. COALESCE(canonical_id, id) makes this degrade to
+      // the v1.15 exact match when nothing is folded. Still case-EXACT on the
+      // canonical name (the deliberate canonical casing) — do NOT lower().
       conditions.push(
-        'EXISTS (SELECT 1 FROM media_artists ma JOIN artists a ON a.id = ma.artist_id ' +
-        'WHERE ma.media_id = m.id AND a.name = @artist)'
+        'EXISTS (SELECT 1 FROM media_artists ma ' +
+        'JOIN artists a   ON a.id  = ma.artist_id ' +
+        'JOIN artists can ON can.id = COALESCE(a.canonical_id, a.id) ' +
+        'WHERE ma.media_id = m.id AND can.name = @artist)'
       );
       params.artist = artist;
     }

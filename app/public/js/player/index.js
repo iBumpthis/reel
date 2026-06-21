@@ -69,7 +69,13 @@ function buildArtistNodes(displayArtist, members) {
   }
   const out = document.createDocumentFragment();
   let remaining = displayArtist;
-  for (const name of members) {
+  for (const member of members) {
+    // Each member is { name (literal, as it appears in the display string),
+    // canonical (the filter target) }. Walk on the literal so a "REZZ"-cased
+    // file still reconstructs; link to the canonical so the filter resolves.
+    // Tolerate a bare string (older payload) by treating name === canonical.
+    const name = typeof member === 'string' ? member : member.name;
+    const canonical = typeof member === 'string' ? member : (member.canonical ?? member.name);
     const idx = remaining.indexOf(name);
     if (idx === -1) {
       // Display drifted from the relation — fall back to plain text entirely.
@@ -79,7 +85,7 @@ function buildArtistNodes(displayArtist, members) {
     }
     if (idx > 0) out.appendChild(document.createTextNode(remaining.slice(0, idx)));
     const a = document.createElement('a');
-    a.href = `/?artist=${encodeURIComponent(name)}`;
+    a.href = `/?artist=${encodeURIComponent(canonical)}`;
     a.className = 'player-artist-link';
     a.textContent = name;
     out.appendChild(a);

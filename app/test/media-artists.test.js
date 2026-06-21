@@ -100,6 +100,7 @@ function freshDb() {
     '003-fts-triggers.sql',
     '004-soft-delete.sql',
     '005-media-artists.sql',
+    '006-artist-canonical.sql',
   ]) {
     db.exec(readFileSync(join(MIGRATIONS, f), 'utf8'));
   }
@@ -120,10 +121,10 @@ const memberNames = (db, mediaId) => db.prepare(
 
 const artistRowCount = (db) => db.prepare('SELECT COUNT(*) AS n FROM artists').get().n;
 
-test('005 — migration applies and reports schema_version 5', { skip }, () => {
+test('migrations — chain applies through 006 (schema_version 6)', { skip }, () => {
   const db = freshDb();
   const v = db.prepare('SELECT MAX(version) AS v FROM schema_version').get().v;
-  assert.equal(v, 5);
+  assert.equal(v, 6);
   // Tables exist and are empty.
   assert.equal(artistRowCount(db), 0);
   db.close();
@@ -183,14 +184,20 @@ test('sync — re-sync with a CHANGED display artist REPLACES, does not accrete'
   db.close();
 });
 
-test('sync — distinct casings stay distinct rows in Stage A (no folding)', { skip }, () => {
+test('sync — casing variants stay distinct identity rows under canonical fold (006)', { skip }, () => {
   const db = freshDb();
   const stmts = makeArtistStmts(db);
   const a = insertMedia(db).run({ abs: '/m/a.mp3', rel: 'a.mp3', fn: 'Rezz - X (2024).mp3', ext: 'mp3', type: 'audio', artist: 'Rezz' }).lastInsertRowid;
   const b = insertMedia(db).run({ abs: '/m/b.mp3', rel: 'b.mp3', fn: 'REZZ - Y (2024).mp3', ext: 'mp3', type: 'audio', artist: 'REZZ' }).lastInsertRowid;
   syncArtistLinks(a, deriveArtistNames(parseFilename('Rezz - X (2024).mp3'), 'Rezz'), stmts);
   syncArtistLinks(b, deriveArtistNames(parseFilename('REZZ - Y (2024).mp3'), 'REZZ'), stmts);
-  assert.equal(artistRowCount(db), 2, 'Rezz and REZZ are distinct rows until Stage C');
+  // Canonical fold (006) GROUPS variants for browse but never merges/deletes
+  // rows: Rezz and REZZ remain two distinct identity rows (per-file display
+  // fidelity), with REZZ pointing at the first-seen Rezz as its canonical.
+  assert.equal(artistRowCount(db), 2, 'Rezz and REZZ remain distinct identity rows');
+  const rezzId = db.prepare("SELECT id FROM artists WHERE name = 'Rezz'").get().id;
+  const variant = db.prepare("SELECT canonical_id FROM artists WHERE name = 'REZZ'").get();
+  assert.equal(variant.canonical_id, rezzId, 'REZZ folds onto Rezz canonical');
   db.close();
 });
 

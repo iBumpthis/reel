@@ -38,6 +38,9 @@ export function loadConfig() {
     autoTagDepth: file.autoTagDepth ?? 0,
     autoTagExclude: file.autoTagExclude ?? [],
     tagRules: file.tagRules ?? [],
+    // Artist casing fold (migration 006). Default ON. When false, case-variant
+    // artists (Rezz/REZZ) are NOT grouped — the facet/filter behave as in v1.15.
+    artistCanonicalFold: file.artistCanonicalFold !== false,
   };
 
   // Validate required fields

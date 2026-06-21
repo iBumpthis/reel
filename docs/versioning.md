@@ -935,6 +935,53 @@ Three small fixes from the v1.15.0 smoke test, all in the frontend:
   sit in the title colour with a subtle underline at rest and take the accent on
   hover. Tunable via `.player-artist-link` in `player.css`.
 
+### v1.16.0 — Artist Normalization, Stage C1 (canonical casing fold)
+
+Adds a **canonical artist layer** so case-variant artists (`Rezz` / `REZZ` /
+`rezz`) browse as one entry instead of fragmenting the sidebar. Purely additive
+on top of the Stage A/B relation — **no row deletion, and `media.artist`
+(display / FTS / sort / inline-edit) is untouched.** A file named `REZZ - …`
+still shows REZZ on its card; the facet/filter just group it under the canonical
+casing.
+
+- **Migration 006 (additive).** Three columns on `artists`: `canonical_id`
+  (self-referential grouping; NULL ⇒ own canonical), `kind` (`'artist'` default,
+  `'act'` reserved for C2's alias-as-act), and `canonical_source`
+  (`auto`/`manual`/NULL provenance, so a future manual pin is additive and the
+  auto-fold won't clobber it). `normalized` stays **case-preserving** — variants
+  remain distinct identity ROWS; only the grouping changes. (This is the layer
+  005's header anticipated; it is why we did **not** fold `normalized` to
+  `lower()`.)
+- **Facet / filter resolve through `COALESCE(canonical_id, id)`.**
+  `GET /api/artists` groups by the canonical row (`COUNT(DISTINCT m.id)`, so a
+  media linked to two variants of one canonical counts once) and emits the
+  canonical name + `kind`; `?artist=` matches any media whose linked artist folds
+  to that canonical. Both **degrade to the v1.15 per-casing behaviour** when
+  nothing is folded (all `canonical_id` NULL).
+- **Anchor policy: most-used casing wins.** A one-time `backfillCanonical` pass
+  (startup, after `backfillArtists`; DB-only, idempotent) groups existing
+  `kind='artist'` rows by case-insensitive name and points each variant at the
+  most-media-linked casing (lowest id breaks ties). The anchor is chosen once and
+  kept stable thereafter (no display drift as the library grows); a `'manual'`
+  pin is always respected. New variants seen at scan time attach to the
+  established anchor via the find-or-create seam.
+- **Player deep links carry the canonical (Hazard fix).** The member payload is
+  now `{ name, canonical }`: the player walks the display string on the literal
+  `name` (so a `REZZ`-cased file still reconstructs and links) but hrefs the
+  `canonical`, so the link lands on the populated canonical-filtered view instead
+  of dead-ending. Tolerates the older bare-string payload.
+- **Config gate.** `artistCanonicalFold` (default **on**) disables the grouping
+  entirely — an escape hatch if a case-only fold ever over-merges. Off ⇒ the
+  facet/filter behave exactly as in v1.15.
+- **Scope.** Fold is **case-only** (conservative; no punctuation/diacritic
+  normalization). Alias-as-act (`[WANKDAT]` → a browsable act, kind `'act'`) and
+  the inline-edit → relation re-sync are **C2 (v1.16.1)** — the `kind` column
+  ships now so C2 needs no further migration.
+- Tests: new `app/test/artist-canonical.test.js` (fold grouping, most-used
+  anchor, manual-pin respect, idempotency, fold-off gate, member payload,
+  soft-delete exclusion). `media-artists.test.js` / `library-artists.test.js`
+  updated to the 006 chain and canonical-aware expectations.
+
 ## Planned
 
 ### Data Durability (continued, post-1.10.0)
