@@ -1,7 +1,16 @@
 import { parseFilename } from '../services/metadata.js';
+import { deriveArtistMembers, makeArtistStmts, syncArtistLinks } from '../services/artists.js';
 
 export default async function mediaRoutes(fastify) {
   const db = fastify.db;
+
+  // Artist link statements for the inline-edit re-sync (C2-c). Built once at
+  // registration; fastify.config is decorated in server.js. b2bJoin mirrors the
+  // scanner (note the pre-existing config.js passthrough gap — b2bDisplayJoin
+  // isn't wired through config.js, so this is effectively always " b2b ";
+  // intentionally left alone, just mirrored here so PATCH and scan agree).
+  const artistStmts = makeArtistStmts(db, fastify.config);
+  const b2bJoin = fastify.config.b2bDisplayJoin ?? ' b2b ';
 
   const getMedia = db.prepare(`
     SELECT m.*, l.name AS library_name
@@ -161,6 +170,29 @@ export default async function mediaRoutes(fastify) {
 
     // Return fresh record
     const updated = getMedia.get(id);
+
+    // C2-c — re-sync the relational artist membership when the artist column was
+    // edited, so the facet/filter reflect the change in THIS request instead of
+    // only after a rescan (closes the long-open "edit reflects after a rescan"
+    // gap). This is a write-path data mutation on a user action, but it reuses
+    // the SAME proven diff-replace syncArtistLinks the scanner runs (covered by
+    // the Stage A accretion regression test) — it only rewrites this one row's
+    // links, and only when they actually changed.
+    //
+    // b2b multiplicity comes from the (unchanged) FILENAME, not the edited
+    // string — so editing the display of a b2b set does not collapse it. The
+    // EFFECTIVE display (`updated.artist ?? parsed.artist`, Decision H) is used
+    // so clearing the artist to null re-points membership to the filename
+    // fallback that the card still shows (not an empty relation). A new casing
+    // introduced by the edit gets its canonical assigned by the fold seam inside
+    // syncArtistLinks; group RE-ANCHORING still waits for the next
+    // backfillCanonical (restart), consistent with the rename story.
+    if ('artist' in body) {
+      const parsed = parseFilename(updated.filename, { b2bJoin });
+      const eff = updated.artist ?? parsed.artist;
+      syncArtistLinks(updated.id, deriveArtistMembers(parsed, eff), artistStmts);
+    }
+
     return buildResponse(updated);
   });
 }

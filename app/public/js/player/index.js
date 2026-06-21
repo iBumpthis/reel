@@ -95,6 +95,38 @@ function buildArtistNodes(displayArtist, members) {
   return out;
 }
 
+/**
+ * Render the act affordance (C2) — a separate "as <ACT>" line under the title
+ * for any kind='act' members (a promoted "[ALIAS]" collective). The act is NOT
+ * in media.artist (the parser strips it), so it can't be one of the inline
+ * title links; it gets its own element. Each act links to its canonical-
+ * filtered library view, mirroring the per-member artist links. Idempotent:
+ * removes any prior render first. No-op when there are no acts (or on an older
+ * kind-less payload).
+ */
+function renderActAffordance(members) {
+  const prior = document.getElementById('playerActs');
+  if (prior) prior.remove();
+  if (!Array.isArray(members)) return;
+  const acts = members.filter(m => typeof m !== 'string' && m.kind === 'act');
+  if (acts.length === 0) return;
+
+  const wrap = document.createElement('div');
+  wrap.id = 'playerActs';
+  wrap.className = 'player-acts';
+  wrap.appendChild(document.createTextNode('as '));
+  acts.forEach((act, i) => {
+    if (i > 0) wrap.appendChild(document.createTextNode(', '));
+    const a = document.createElement('a');
+    a.href = `/?artist=${encodeURIComponent(act.canonical ?? act.name)}`;
+    a.className = 'player-act-link';
+    a.textContent = act.name;
+    wrap.appendChild(a);
+  });
+  // Place directly after the title h1, above the year/library/ext sub-line.
+  els.playerTitle.insertAdjacentElement('afterend', wrap);
+}
+
 async function load() {
   if (!id) {
     els.playerTitle.textContent = 'No media selected';
@@ -114,11 +146,22 @@ async function load() {
     const display = media.title || media.filename;
     els.playerTitle.textContent = '';
     if (media.artist) {
-      els.playerTitle.appendChild(buildArtistNodes(media.artist, media.artists));
+      // Acts ("[WANKDAT]") are stripped from media.artist by the parser, so they
+      // are NOT in the display string buildArtistNodes walks — passing one would
+      // miss the walk and collapse ALL inline links to plain text. Filter acts
+      // out here and surface them via renderActAffordance below. Bare-string and
+      // kind-less (older) payloads are treated as artists.
+      const members = Array.isArray(media.artists) ? media.artists : [];
+      const artistMembers = members.filter(m => typeof m === 'string' || m.kind !== 'act');
+      els.playerTitle.appendChild(buildArtistNodes(media.artist, artistMembers));
       els.playerTitle.appendChild(document.createTextNode(` — ${display}`));
     } else {
       els.playerTitle.textContent = display;
     }
+    // C2 — act affordance ("as WANKDAT"), rendered as its own element because
+    // the act name is absent from the title display string and cannot be
+    // inline-linked. Links to the act's canonical-filtered library view.
+    renderActAffordance(media.artists);
     const parts = [media.year, media.libraryName, (media.ext || '').toUpperCase()].filter(Boolean);
     els.playerSub.textContent = parts.join(' · ');
 

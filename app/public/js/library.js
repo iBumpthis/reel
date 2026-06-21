@@ -149,7 +149,7 @@ function renderSidebarArtists() {
   elSidebarArtists.appendChild(allItem);
 
   for (const a of allArtists) {
-    const item = createSidebarItem(a.name, a.count, activeArtistFilter === a.name);
+    const item = createSidebarItem(a.name, a.count, activeArtistFilter === a.name, a.kind);
     item.addEventListener('click', () => {
       activeArtistFilter = activeArtistFilter === a.name ? null : a.name;
       syncArtistUrl();
@@ -186,11 +186,17 @@ function renderSidebarTags() {
   }
 }
 
-function createSidebarItem(name, count, active) {
+function createSidebarItem(name, count, active, kind) {
   const el = document.createElement('div');
   el.className = `sidebar-item${active ? ' active' : ''}`;
+  // C2 — act badge: a promoted "[ALIAS]" collective (kind='act') reads
+  // differently from a person in the artist sidebar. Additive; artists render
+  // unchanged (kind undefined on older payloads => no badge).
+  const badge = kind === 'act'
+    ? ` <span class="sidebar-item-badge" title="Group / act alias">act</span>`
+    : '';
   el.innerHTML = `
-    <span class="sidebar-item-name">${escHtml(name)}</span>
+    <span class="sidebar-item-name">${escHtml(name)}${badge}</span>
     ${count != null ? `<span class="sidebar-item-count">${count}</span>` : ''}`;
   return el;
 }

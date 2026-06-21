@@ -156,9 +156,16 @@ filter for all back-to-back sets.
 > rows. Set `"artistCanonicalFold": false` in `config.json` to disable folding
 > (browse reverts to the per-casing v1.15 behaviour).
 >
-> *Note:* an inline artist edit updates `media.artist` immediately but re-syncs
-> into `media_artists` only on the next scan, so the facet/filter reflect the
-> edit after a rescan.
+> As of **v1.16.1** a bracketed group/act alias (`[WANKDAT]`) is a **browsable
+> entity** in its own right (see *Group / Act Aliases* below), and deliberately
+> renaming the majority casing of a folded group moves the canonical display to
+> the new majority **on the next restart** (`./deploy.sh` restarts the
+> container; a bare rescan does not re-anchor).
+>
+> *Note:* as of **v1.16.1** an inline artist edit re-syncs `media_artists` in the
+> same request, so the artist **facet/filter reflect the edit immediately** (no
+> rescan needed). The canonical **display casing** of a folded group still
+> settles on the next restart — see the act/rename note below.
 
 If an artist name contains a `-`, remove it from the filename for correct
 parsing (the first ` - ` is the artist/title separator) and re-add it via the
@@ -174,17 +181,40 @@ Artist3 b2b Artist2 [DUONAME] - Some Event (2025).mp4
 Artist4 b2b Artist5 b2b Artist6 [TRIONAME] - Some Event (2024).mp4
 ```
 
-The bracketed name is parsed as a **tag** (`DUONAME`, `TRIONAME`) and stripped
-from the artist display — so the artist line stays the member chain
-(`Artist3 b2b Artist2`), the file still sorts under its leading member, and the
-collective name is searchable and filterable as a tag. This works for any number
-of members, and for named acts as well as occasional pairings (gated by the same
-`b2bTagging` switch).
+The bracketed name is parsed as the collective name for the set. As of
+**v1.16.1** it is promoted to a **browsable act** — a first-class entry in the
+artist sidebar (marked with a small `act` badge) that filters to every set
+performed under that name, and a link in the player shown as an *"as &lt;ACT&gt;"*
+line under the title. It is **also** kept as a tag this release (the tag and the
+act coexist). The act name is stripped from the artist **display**, so the
+artist line stays the member chain (`Artist3 b2b Artist2`) and the file still
+sorts under its leading member.
 
-`[...]` is a reserved slot **only in the artist position** (before the first
-` - `). A bracket in the event/title portion — e.g.
-`… - Ultra [Mainstage] (2025).mp4` — is left as literal title text and is not
-turned into a tag.
+An act is reachable three ways — via each individual member **and** via the act
+itself:
+
+```
+Eptic b2b Space Laces b2b SVDDEN DEATH [MASTERHVND] - Some Set (2026).mp4
+  → browse: Eptic | Space Laces | SVDDEN DEATH | MASTERHVND (act)
+```
+
+Acts are their **own** canonical and are never case-folded into a same-spelled
+person (an act is a distinct kind of entity, not a casing of an artist). They
+work for any number of members and for named acts as well as occasional
+pairings (gated by the same `b2bTagging` switch). A solo file with a trailing
+alias (`Skrillex [OWSLA] - …`) promotes the act too.
+
+> **Reserved slot.** A trailing `[...]` in the **artist position** (before the
+> first ` - `) is reserved **exclusively for an act name** — not a
+> version/edit/mastering marker (`[VIP]`, `[Edit]`, …). Such a bracket would be
+> read as an act and surface as a browsable entity. A bracket in the
+> event/title portion — e.g. `… - Ultra [Mainstage] (2025).mp4` — is left as
+> literal title text and is not turned into an act or tag.
+
+> **When acts appear.** On a system already running v1.14–v1.16.0, acts populate
+> on the **next library scan** (the same way b2b tags backfill onto
+> already-imported files) — no Full Metadata Scan required. A bracketed alias on
+> a newly-added file is linked on its first scan.
 
 ### Tag Rules (Filename Keyword Matching)
 

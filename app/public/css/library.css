@@ -145,6 +145,31 @@
   text-overflow: ellipsis;
 }
 
+/* Act badge (C2): marks a promoted "[ALIAS]" collective (kind='act') in the
+   artist sidebar so it reads differently from a person. Subtle pill, inherits
+   the row's colour states (muted at rest, accent when the row is active). */
+.sidebar-item-badge {
+  display: inline-block;
+  font-size: 0.571rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 5px;
+  margin-left: 4px;
+  border-radius: 8px;
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  border: 1px solid var(--border-subtle);
+  vertical-align: middle;
+}
+.sidebar-item:hover .sidebar-item-badge {
+  color: var(--text-secondary);
+}
+.sidebar-item.active .sidebar-item-badge {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
 /* Sidebar tags section — pills instead of list */
 .sidebar-tags {
   display: flex;

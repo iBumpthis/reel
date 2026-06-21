@@ -26,6 +26,7 @@ import { dirname, join } from 'node:path';
 
 import {
   deriveArtistNames,
+  deriveArtistMembers,
   makeArtistStmts,
   syncArtistLinks,
   backfillArtists,
@@ -68,6 +69,61 @@ test('derive — solo with no/empty display artist yields no members', () => {
   const parsed = parseFilename('Some Title (2024).mp4'); // no artist
   assert.deepEqual(deriveArtistNames(parsed, null), []);
   assert.deepEqual(deriveArtistNames(parsed, ''), []);
+});
+
+// ============================================================
+// Layer 1b: deriveArtistMembers (typed, act-aware — C2)
+// ============================================================
+
+test('members — solo: one artist member, no act', () => {
+  const parsed = parseFilename('Eptic - Lost Lands (2025).mp4');
+  assert.deepEqual(deriveArtistMembers(parsed, 'Eptic'), [{ name: 'Eptic', kind: 'artist' }]);
+});
+
+test('members — b2b: each member is kind artist, in filename order', () => {
+  const parsed = parseFilename('Excision b2b Wooli - Lost Lands (2024).mp4');
+  assert.deepEqual(deriveArtistMembers(parsed, 'Excision'), [
+    { name: 'Excision', kind: 'artist' },
+    { name: 'Wooli', kind: 'artist' },
+  ]);
+});
+
+test('members — b2b trio WITH alias: members + a trailing kind=act', () => {
+  const parsed = parseFilename('Eptic b2b Space Laces b2b SVDDEN DEATH [MASTERHVND] - Event (2024).mp4');
+  assert.deepEqual(deriveArtistMembers(parsed, 'whatever'), [
+    { name: 'Eptic', kind: 'artist' },
+    { name: 'Space Laces', kind: 'artist' },
+    { name: 'SVDDEN DEATH', kind: 'artist' },
+    { name: 'MASTERHVND', kind: 'act' },
+  ]);
+});
+
+test('members — solo WITH alias: act is promoted independent of isB2B', () => {
+  const parsed = parseFilename('Skrillex [OWSLA] - VIP Mix (2025).mp4');
+  assert.equal(parsed.isB2B, false);
+  assert.deepEqual(deriveArtistMembers(parsed, 'Skrillex'), [
+    { name: 'Skrillex', kind: 'artist' },
+    { name: 'OWSLA', kind: 'act' },
+  ]);
+});
+
+test('members — alias with no artist yields the act only', () => {
+  // Degenerate but well-defined: an artist-position bracket with nothing before
+  // it. No artist member; the act still promotes.
+  const parsed = parseFilename('[COLLECTIVE] - Set (2024).mp4');
+  assert.deepEqual(deriveArtistMembers(parsed, parsed.artist), [
+    { name: 'COLLECTIVE', kind: 'act' },
+  ]);
+});
+
+test('members — deriveArtistNames is the artist-only projection of members', () => {
+  // The wrapper must stay behaviour-identical: same artist names, alias dropped.
+  const parsed = parseFilename('Eptic b2b Space Laces [DUO] - Event (2024).mp4');
+  const names = deriveArtistMembers(parsed, 'x')
+    .filter(m => m.kind === 'artist')
+    .map(m => m.name);
+  assert.deepEqual(deriveArtistNames(parsed, 'x'), names);
+  assert.deepEqual(deriveArtistNames(parsed, 'x'), ['Eptic', 'Space Laces']);
 });
 
 // ============================================================
