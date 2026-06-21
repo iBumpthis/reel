@@ -982,6 +982,61 @@ casing.
   soft-delete exclusion). `media-artists.test.js` / `library-artists.test.js`
   updated to the 006 chain and canonical-aware expectations.
 
+### v1.16.1 — Artist Normalization, Stage C2 (alias-as-act + fold completion)
+
+Completes the artist arc. **Code-only — no migration** (`kind` /
+`canonical_source` shipped in 006). Three independent pieces on top of C1's
+casing fold:
+
+- **Alias-as-act.** A trailing `[ALIAS]` collective (`[WANKDAT]`,
+  `[MASTERHVND]`) is promoted from a tag-only to a **first-class browsable
+  entity** (`kind='act'`). A set `Eptic b2b Space Laces [WANKDAT] - …` is now
+  reachable via **Eptic**, **Space Laces**, *and* **WANKDAT**. Acts are their
+  own canonical and are **never case-folded into a same-spelled person** (an act
+  is a distinct kind of entity, not a casing). The facet/filter needed no change
+  — they already group by `COALESCE(canonical_id, id)` and emit `kind`, so an act
+  surfaces as its own entry. The alias **tag is retained** this release
+  (tag + act coexist; the tag is retired in a later follow-up). New typed derive
+  seam `deriveArtistMembers` (returns `[{name, kind}]`); `deriveArtistNames` is
+  kept as a behaviour-identical artist-only wrapper.
+- **Dynamic canonical anchor.** `backfillCanonical` now re-picks the most-used
+  casing on **every** run (previously the anchor was frozen once). So
+  deliberately renaming the majority casing of a folded group and redeploying
+  **moves the canonical display** to the new majority. A `'manual'` pin still
+  wins; an unchanged library is still a stable no-op. **Caveat:**
+  `backfillCanonical` runs at **startup only**, so a rename re-anchors on the
+  next container restart — `./deploy.sh` restarts, so the real flow (rename
+  files → rescan → redeploy) works; a bare rescan does not re-anchor. A
+  documented manual step until the settings-menu arc adds a UI restart.
+- **Inline-edit re-sync.** `PATCH /api/media/:id` now re-syncs `media_artists`
+  in the same request when the artist is edited, so the facet/filter reflect the
+  change **immediately** instead of only after a rescan. b2b multiplicity comes
+  from the (unchanged) filename, not the edited display string; clearing the
+  artist to null re-points membership to the filename fallback the card still
+  shows (not an empty relation). Reuses the proven diff-replace `syncArtistLinks`
+  the scanner runs. The scanner's solo derive was aligned to the same
+  effective-display rule (`storedArtist ?? parsed.artist`) so edit and scan never
+  diverge on a cleared/null artist.
+- **Frontend.** Sidebar marks acts with a small `act` badge. The player renders
+  acts as a separate **"as &lt;ACT&gt;" line** under the title (the act name is
+  stripped from `media.artist`, so it cannot be one of the inline title links) —
+  each act links to its canonical-filtered view.
+- **Reserved slot.** A trailing `[...]` in the **artist position** is now
+  reserved **exclusively for an act name** — not a version/edit/mastering marker.
+  A bracket in the event/title portion is still left as literal text. (Post-C2 a
+  misparse here becomes a browsable act rather than a stray tag, so the
+  reservation is documented; the promotion is gated behind a single predicate if
+  a future sigil convention is ever needed.)
+- **Carried effects (documented, not bugs).** Acts populate on the **next
+  library scan** (same as b2b tags backfill onto already-imported files); the
+  dynamic re-anchor lands on the **next restart**. Both dissolve into the
+  settings-menu arc's UI restart/rescan.
+- Tests: new `app/test/artist-act.test.js` (alias-as-act linking + facet/filter
+  + non-fold + collision, dynamic re-anchor + idempotency + manual-pin,
+  inline-edit re-sync incl. b2b-from-filename and clear-to-null);
+  `media-artists.test.js` gains `deriveArtistMembers` coverage. C1 fold tests,
+  card display, sort, and FTS unchanged.
+
 ## Planned
 
 ### Data Durability (continued, post-1.10.0)
