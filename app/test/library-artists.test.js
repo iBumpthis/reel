@@ -39,26 +39,29 @@ const MIGRATIONS = join(__dirname, '..', 'db', 'migrations');
 // SQL under test — kept aligned with routes/tags.js + routes/library.js
 // ============================================================
 
-// routes/tags.js — GET /api/artists facet.
+// routes/tags.js — GET /api/artists facet (canonical, 006).
 const FACET_SQL = `
-  SELECT a.name AS name, COUNT(*) AS count
-  FROM artists a
-  JOIN media_artists ma ON ma.artist_id = a.id
-  JOIN media m          ON m.id = ma.media_id
+  SELECT can.name AS name, can.kind AS kind, COUNT(DISTINCT m.id) AS count
+  FROM media m
+  JOIN media_artists ma ON ma.media_id = m.id
+  JOIN artists a   ON a.id  = ma.artist_id
+  JOIN artists can ON can.id = COALESCE(a.canonical_id, a.id)
   WHERE m.present = 1
-  GROUP BY a.id
-  ORDER BY a.name ASC
+  GROUP BY can.id
+  ORDER BY can.name ASC
 `;
 
 // routes/library.js — the EXISTS membership predicate the artist filter pushes
-// onto the WHERE list, plus the surrounding present filter, as a standalone
-// query for the test.
+// onto the WHERE list (canonical, 006), plus the surrounding present filter, as
+// a standalone query for the test.
 const FILTER_SQL = `
   SELECT m.id, m.artist
   FROM media m
   WHERE m.present = 1
-    AND EXISTS (SELECT 1 FROM media_artists ma JOIN artists a ON a.id = ma.artist_id
-                WHERE ma.media_id = m.id AND a.name = @artist)
+    AND EXISTS (SELECT 1 FROM media_artists ma
+                JOIN artists a   ON a.id  = ma.artist_id
+                JOIN artists can ON can.id = COALESCE(a.canonical_id, a.id)
+                WHERE ma.media_id = m.id AND can.name = @artist)
   ORDER BY m.id
 `;
 
@@ -92,6 +95,7 @@ function freshDb() {
     '003-fts-triggers.sql',
     '004-soft-delete.sql',
     '005-media-artists.sql',
+    '006-artist-canonical.sql',
   ]) {
     db.exec(readFileSync(join(MIGRATIONS, f), 'utf8'));
   }
@@ -156,14 +160,15 @@ test('facet — an artist whose only sets are all missing drops off the facet', 
   db.close();
 });
 
-test('facet — distinct casings stay distinct facet rows (case-exact, Stage A)', { skip }, () => {
+test('facet — casing variants fold to one canonical entry (006)', { skip }, () => {
   const db = freshDb();
   const stmts = makeArtistStmts(db);
   addMedia(db, stmts, 'Rezz - X (2024).mp4', 'Rezz');
   addMedia(db, stmts, 'REZZ - Y (2024).mp4', 'REZZ');
   const fm = facetMap(db);
-  assert.equal(fm.Rezz, 1);
-  assert.equal(fm.REZZ, 1);
+  // Inline fold makes the first-seen casing (Rezz) the canonical; REZZ folds in.
+  assert.equal(fm.Rezz, 2, 'both casings counted under one canonical');
+  assert.equal(fm.REZZ, undefined, 'variant casing is not its own facet entry');
   db.close();
 });
 
@@ -191,13 +196,15 @@ test('filter — a pure solo artist returns just their set', { skip }, () => {
   db.close();
 });
 
-test('filter — stays case-exact: Rezz and REZZ do not cross-match', { skip }, () => {
+test('filter — canonical name returns all casings; a variant casing returns none (006)', { skip }, () => {
   const db = freshDb();
   const stmts = makeArtistStmts(db);
   addMedia(db, stmts, 'Rezz - X (2024).mp4', 'Rezz');
   addMedia(db, stmts, 'REZZ - Y (2024).mp4', 'REZZ');
-  assert.deepEqual(filterBy(db, 'Rezz'), ['Rezz']);
-  assert.deepEqual(filterBy(db, 'REZZ'), ['REZZ']);
+  // The facet emits only the canonical ("Rezz"); filtering it returns both files.
+  assert.deepEqual(filterBy(db, 'Rezz'), ['Rezz', 'REZZ']);
+  // A non-canonical casing is never surfaced by the facet, so it matches nothing.
+  assert.deepEqual(filterBy(db, 'REZZ'), []);
   db.close();
 });
 

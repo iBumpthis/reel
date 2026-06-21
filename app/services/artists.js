@@ -40,8 +40,13 @@ export function deriveArtistNames(parsed, displayArtist) {
 }
 
 /** Prepared statements for the artist find-or-create + per-row link sync. */
-export function makeArtistStmts(db) {
+export function makeArtistStmts(db, config = {}) {
   return {
+    // Casing-fold gate (migration 006). Default ON; `artistCanonicalFold: false`
+    // in config disables the canonical grouping entirely (rows still created,
+    // canonical_id just stays NULL → the facet/filter degrade to Stage B's
+    // per-casing behaviour via COALESCE).
+    foldEnabled: config.artistCanonicalFold !== false,
     findArtist: db.prepare('SELECT id FROM artists WHERE normalized = ?'),
     insertArtist: db.prepare('INSERT INTO artists (name, normalized) VALUES (@name, @normalized)'),
     linkArtist: db.prepare('INSERT OR IGNORE INTO media_artists (media_id, artist_id) VALUES (@media_id, @artist_id)'),
@@ -51,6 +56,19 @@ export function makeArtistStmts(db) {
        WHERE ma.media_id = ?`
     ),
     clearLinks: db.prepare('DELETE FROM media_artists WHERE media_id = ?'),
+    // Casing fold (migration 006): when a NEW kind='artist' row is created, find
+    // an existing case-variant sibling and attach the new row to that sibling's
+    // canonical, so the facet/filter group them. Prefers an established anchor
+    // (canonical_id NULL) sibling, then lowest id, for a deterministic target.
+    findFoldSibling: db.prepare(
+      `SELECT id, canonical_id FROM artists
+       WHERE kind = 'artist' AND lower(name) = lower(?) AND id != ?
+       ORDER BY (canonical_id IS NULL) DESC, id ASC LIMIT 1`
+    ),
+    setCanonicalAuto: db.prepare(
+      "UPDATE artists SET canonical_id = @canon, canonical_source = 'auto' " +
+      "WHERE id = @id AND canonical_source IS NOT 'manual'"
+    ),
   };
 }
 
@@ -105,6 +123,18 @@ export function syncArtistLinks(mediaId, names, stmts) {
     if (!row) {
       const res = insertArtist.run({ name, normalized });
       row = { id: res.lastInsertRowid };
+      // Casing fold (migration 006): attach this new casing variant to an
+      // existing sibling's canonical so browse groups them. First-of-its-name
+      // rows have no sibling and stay self-canonical (canonical_id NULL). The
+      // one-time backfillCanonical re-picks anchors by most-used among rows
+      // that pre-existed the 006 deploy; live additions attach to the
+      // established anchor here.
+      if (stmts.foldEnabled) {
+        const sib = stmts.findFoldSibling.get(name, row.id);
+        if (sib) {
+          stmts.setCanonicalAuto.run({ id: row.id, canon: sib.canonical_id ?? sib.id });
+        }
+      }
     }
     linkArtist.run({ media_id: mediaId, artist_id: row.id });
   }
@@ -151,4 +181,83 @@ export function backfillArtists(db, config) {
 
   console.log(`[reel] Backfilled media_artists from ${rows.length} media row(s)`);
   return { ran: true, rows: rows.length };
+}
+
+/**
+ * One-time casing-fold pass (migration 006). Groups existing kind='artist' rows
+ * by case-insensitive name and points each variant at a single canonical row,
+ * so the facet/filter (which resolve through COALESCE(canonical_id, id)) show
+ * one entry per artist instead of one per casing. Runs at startup after
+ * backfillArtists, like that pass: DB-only (no NAS I/O), idempotent.
+ *
+ * Anchor policy (Decision A): the MOST-USED casing wins (count of media links),
+ * lowest id as the tiebreak. Chosen ONCE per group — a group with a settled
+ * anchor (a self-canonical row already marked 'auto') keeps it, so the canonical
+ * display does not drift as the library grows; only stray newcomers attach.
+ * A 'manual' pin (reserved for a future override) is always respected and never
+ * clobbered. The WHERE guards make every UPDATE a no-op once stable.
+ *
+ * Gated by config.artistCanonicalFold (default ON). normalized is untouched —
+ * variants remain distinct identity ROWS; only the grouping changes.
+ *
+ * @param {import('better-sqlite3').Database} db
+ * @param {object} config - app config (uses artistCanonicalFold)
+ * @returns {{ ran: boolean, groups: number }}
+ */
+export function backfillCanonical(db, config = {}) {
+  if (config.artistCanonicalFold === false) return { ran: false, groups: 0 };
+
+  const groups = db.prepare(`
+    SELECT lower(name) AS k
+    FROM artists
+    WHERE kind = 'artist'
+    GROUP BY lower(name)
+    HAVING COUNT(*) > 1
+  `).all();
+  if (groups.length === 0) return { ran: false, groups: 0 };
+
+  const membersOf = db.prepare(`
+    SELECT a.id, a.canonical_id, a.canonical_source,
+           (SELECT COUNT(*) FROM media_artists ma WHERE ma.artist_id = a.id) AS uses
+    FROM artists a
+    WHERE a.kind = 'artist' AND lower(a.name) = ?
+    ORDER BY uses DESC, a.id ASC
+  `);
+  // Anchor: become self-canonical + mark processed. No-op once already so.
+  const setAnchor = db.prepare(
+    "UPDATE artists SET canonical_id = NULL, canonical_source = 'auto' " +
+    "WHERE id = @id AND canonical_source IS NOT 'manual' " +
+    "AND (canonical_id IS NOT NULL OR canonical_source IS NULL)"
+  );
+  // Variant: point at the anchor. No-op once already pointing there as 'auto'.
+  const setVariant = db.prepare(
+    "UPDATE artists SET canonical_id = @canon, canonical_source = 'auto' " +
+    "WHERE id = @id AND canonical_source IS NOT 'manual' " +
+    "AND (canonical_id IS NOT @canon OR canonical_source IS NULL)"
+  );
+
+  let processed = 0;
+  const run = db.transaction(() => {
+    for (const g of groups) {
+      const members = membersOf.all(g.k);
+      // A settled anchor is a self-canonical row already marked (source set).
+      // Keep it (stable display). Else pick a manual pin, else most-used.
+      const settled = members.find(m => m.canonical_id === null && m.canonical_source !== null);
+      const anchor = settled
+        ?? members.find(m => m.canonical_source === 'manual')
+        ?? members[0];
+      for (const m of members) {
+        if (m.id === anchor.id) {
+          if (m.canonical_source !== 'manual') setAnchor.run({ id: m.id });
+        } else {
+          setVariant.run({ id: m.id, canon: anchor.id });
+        }
+      }
+      processed++;
+    }
+  });
+  run();
+
+  console.log(`[reel] Canonical-folded ${processed} artist casing group(s)`);
+  return { ran: true, groups: processed };
 }

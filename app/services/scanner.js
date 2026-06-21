@@ -208,7 +208,7 @@ export async function scanLibraries(config, db, options = {}) {
   // the SOLO member is derived from the stored media.artist column rather than
   // the freshly-parsed value: it keeps the relational projection idempotent and
   // identical to the backfill across re-scans / metadata refreshes / edits.
-  const artistStmts = makeArtistStmts(db);
+  const artistStmts = makeArtistStmts(db, config);
   const getArtistByPath = db.prepare('SELECT artist FROM media WHERE abs_path = ?');
 
   let totalUpserts = 0;

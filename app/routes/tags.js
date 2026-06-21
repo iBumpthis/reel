@@ -37,19 +37,25 @@ export default async function tagRoutes(fastify) {
   // lists each artist once and counts every present media they're linked to
   // (solo + b2b). The combined "A b2b B" string no longer appears as a facet.
   //
-  // CASE-EXACT: a.name is the case-preserving identity (Stage A); "Rezz" and
-  // "REZZ" stay distinct rows. Case folding is Stage C, deliberately parked.
+  // GROUP BY the CANONICAL row (006): case-variant rows (Rezz/REZZ) fold to one
+  // entry, and a promoted act (kind='act', C2) shows as its own entry.
+  // canonical_id NULL ⇒ the row is its own canonical, so COALESCE(canonical_id,
+  // id) is the grouping key and this degrades to the v1.15 per-casing facet when
+  // nothing is folded (e.g. artistCanonicalFold off). COUNT(DISTINCT m.id): a
+  // media linked to two variants of one canonical counts once. kind is surfaced
+  // so the sidebar can mark acts. Display = the canonical (most-used) casing.
   //
   // present = 1: soft-deleted (missing) media keep their links but stay hidden,
   // matching the read-path filtering applied everywhere else.
   const allArtists = db.prepare(`
-    SELECT a.name AS name, COUNT(*) AS count
-    FROM artists a
-    JOIN media_artists ma ON ma.artist_id = a.id
-    JOIN media m          ON m.id = ma.media_id
+    SELECT can.name AS name, can.kind AS kind, COUNT(DISTINCT m.id) AS count
+    FROM media m
+    JOIN media_artists ma ON ma.media_id = m.id
+    JOIN artists a   ON a.id  = ma.artist_id
+    JOIN artists can ON can.id = COALESCE(a.canonical_id, a.id)
     WHERE m.present = 1
-    GROUP BY a.id
-    ORDER BY a.name ASC
+    GROUP BY can.id
+    ORDER BY can.name ASC
   `);
 
   fastify.get('/api/artists', async () => {

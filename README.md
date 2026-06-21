@@ -69,6 +69,7 @@ override file values where noted.
 | `tagRules` | No | — | Array of `{match, tag}` keyword rules for filename-based auto-tagging. See below. |
 | `b2bTagging` | No | — | When `true` (default), back-to-back sets (`A b2b B - Event (YYYY)`) emit one tag per individual artist plus a `b2b` tag. See below. |
 | `b2bDisplayJoin` | No | — | Separator used to rebuild the artist display string for a b2b set. Default `" b2b "` (preserved verbatim). Set to `" | "` for a piped display. Does not affect tagging or search. |
+| `artistCanonicalFold` | No | `true` | When `true`, case-variant artists (`Rezz`/`REZZ`) are grouped under one canonical (most-used) casing in the artist sidebar and filter. Set `false` for per-casing browse. Display, sort, and search are unaffected either way. |
 
 ### Auto-Tagging
 
@@ -144,7 +145,16 @@ filter for all back-to-back sets.
 > sidebar (b2b sets no longer fragment into combined `A b2b B` entries), and
 > filtering an artist returns their solo and b2b sets together. The player title
 > links each artist to its filtered library view (`/?artist=<name>`; one link
-> per member for a b2b set). Matching is **case-exact** (`Rezz` ≠ `REZZ`).
+> per member for a b2b set).
+>
+> As of **v1.16.0** the facet/filter resolve through a **canonical** layer:
+> case-variant artists (`Rezz` / `REZZ` / `rezz`) browse as **one** entry under
+> the most-used casing, and filtering it returns every casing's files. The
+> player links carry the canonical so they always land on a populated view. This
+> is a **browse-grouping concern only** — `media.artist` is untouched, so each
+> file still shows its own casing on its card, and the variants stay distinct
+> rows. Set `"artistCanonicalFold": false` in `config.json` to disable folding
+> (browse reverts to the per-casing v1.15 behaviour).
 >
 > *Note:* an inline artist edit updates `media.artist` immediately but re-syncs
 > into `media_artists` only on the next scan, so the facet/filter reflect the

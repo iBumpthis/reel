@@ -26,15 +26,17 @@ export default async function mediaRoutes(fastify) {
     ORDER BY t.name ASC
   `);
 
-  // Relational artist members (media_artists, migration 005). This is the SAME
-  // source the artist facet/filter read from (Stage B), so a per-member deep
-  // link built from it always lands on a populated filtered view. The SELECT
-  // order is arbitrary; buildResponse re-orders by position in the display
-  // string so the player can reconstruct "A b2b B" with each member linked.
+  // Relational artist members (media_artists, 005) with their CANONICAL name
+  // (006). The player walks the display string on the LITERAL `name` (so a
+  // "REZZ"-cased file still reconstructs + links) but hrefs the `canonical`,
+  // so the deep link lands on the populated canonical-filtered view rather than
+  // dead-ending (the facet/filter resolve on canonical). canonical_id NULL ⇒
+  // canonical === name (nothing folded). kind surfaced for C2 act links.
   const getArtistMembers = db.prepare(`
-    SELECT a.name
+    SELECT a.name AS name, can.name AS canonical, a.kind AS kind
     FROM media_artists ma
-    JOIN artists a ON a.id = ma.artist_id
+    JOIN artists a   ON a.id  = ma.artist_id
+    JOIN artists can ON can.id = COALESCE(a.canonical_id, a.id)
     WHERE ma.media_id = ?
   `);
 
@@ -56,21 +58,21 @@ export default async function mediaRoutes(fastify) {
     }));
     const tags = getTags.all(row.id).map(t => ({ id: t.id, name: t.name }));
 
-    // Ordered artist members for the player's per-member deep links. The display
-    // string (media.artist) for a b2b set is members.join(b2bJoin) in filename
-    // order, so ordering the relation's members by their position in that string
-    // reproduces display order; members absent from the display (e.g. an inline
-    // artist edit not yet re-synced into the relation by a rescan) sort last and
+    // Ordered artist members for the player's per-member deep links. Each is
+    // { name (literal, for the display-string walk), canonical (the href
+    // target), kind }. Ordered by the literal name's position in the display
+    // string so a b2b set reconstructs in order; members absent from the display
+    // (e.g. an inline artist edit not yet re-synced by a rescan) sort last and
     // the player falls back to plain text for the unmatched portion.
     const displayArtist = row.artist ?? parsed.artist;
-    const memberNames = getArtistMembers.all(row.id).map(r => r.name);
+    const members = getArtistMembers.all(row.id);
     const artists = displayArtist
-      ? memberNames.slice().sort((x, y) => {
-          const ix = displayArtist.indexOf(x);
-          const iy = displayArtist.indexOf(y);
+      ? members.slice().sort((x, y) => {
+          const ix = displayArtist.indexOf(x.name);
+          const iy = displayArtist.indexOf(y.name);
           return (ix < 0 ? Infinity : ix) - (iy < 0 ? Infinity : iy);
         })
-      : memberNames;
+      : members;
 
     return {
       id: row.id,
