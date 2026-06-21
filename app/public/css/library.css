@@ -358,6 +358,12 @@
 .card-title {
   font-weight: 500;
   font-size: 0.929rem;
+  /* min-width:0 lets this flex item shrink below its content width so the
+     ellipsis below actually engages. Without it a flex child defaults to
+     min-width:auto and a long title forces .card-title-row wider than the card,
+     overflowing the grid column — invisible on desktop's wide columns but an
+     overhang on a narrow (single-column) mobile viewport. */
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
