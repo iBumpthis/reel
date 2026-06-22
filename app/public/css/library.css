@@ -325,6 +325,10 @@
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   padding: 12px 14px;
+  /* Grid items default to min-width:auto (won't shrink below content min). With
+     nowrap text inside, that lets the item exceed its track; pair this with the
+     grid's minmax(0, …) so the card always fits its column. */
+  min-width: 0;
   transition: border-color var(--transition-fast);
 }
 .media-card:hover {
@@ -544,7 +548,14 @@
     order: 10;
   }
   .media-grid {
-    grid-template-columns: 1fr;
+    /* minmax(0, 1fr), not bare 1fr (= minmax(auto, 1fr)): the `auto` minimum
+       floors the single column at the widest card's MIN-CONTENT, and the
+       nowrap card-artist/album blocks report their full text width as
+       min-content (overflow:hidden clips render, not intrinsic sizing). That
+       floored the track wider than the viewport, so every card overhung the
+       right edge uniformly. minmax(0, …) lets the track shrink to the container;
+       the card's own ellipsis/clip then handles long text. */
+    grid-template-columns: minmax(0, 1fr);
   }
   .media-card {
     padding: 10px 12px;
