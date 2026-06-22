@@ -1098,6 +1098,28 @@ row wider than the card instead of truncating. Adding `min-width: 0` lets the
 ellipsis engage. Invisible on desktop (wide columns absorb it); the fix is
 correct at every width and changes nothing for titles that already fit.
 
+### v1.17.3 — Mobile card overflow, the actual fix (v1.17.2 was partial)
+
+v1.17.2 added `min-width: 0` to `.card-title` but the overhang persisted,
+because that only lets the title ellipsize *once the card is constrained* — and
+the card wasn't. The mobile grid used `grid-template-columns: 1fr`, which is
+`minmax(auto, 1fr)`; the `auto` minimum floors the single column at the **grid
+item's min-content**, and a long nowrap title inflates that min-content. The
+grid item (`.media-card`) also defaulted to `min-width: auto`, letting it exceed
+the track. So a single long title (e.g. a b2b mix titled "… - with Dodge and
+Fuski, MVRDA, Virtual Riot") pushed the whole single-column track past the
+viewport — and because all single-column tracks share a width, *every* card
+overhung uniformly, with a horizontal page scroll.
+
+Fix: `grid-template-columns: minmax(0, 1fr)` (track shrinks to the container
+instead of flooring at content min-content) plus `min-width: 0` on `.media-card`
+(the grid item can shrink below its content). The card is then constrained to
+the column and the v1.17.2 title ellipsis finally engages. Measured at a 390px
+viewport: document scrollWidth dropped from 660px (overflow) to 390px (no
+overflow), with the long title truncating. The v1.17.2 `.card-title` fix is
+retained — it's still required for the truncation to render; this release adds
+the grid-level constraint it was waiting on.
+
 ## Planned
 
 ### Data Durability (continued, post-1.10.0)
