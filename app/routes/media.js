@@ -1,5 +1,6 @@
 import { parseFilename } from '../services/metadata.js';
 import { deriveArtistMembers, makeArtistStmts, syncArtistLinks } from '../services/artists.js';
+import { mimeForExt } from '../services/mime.js';
 
 export default async function mediaRoutes(fastify) {
   const db = fastify.db;
@@ -90,6 +91,7 @@ export default async function mediaRoutes(fastify) {
       absPath: row.abs_path,
       relPath: row.rel_path,
       ext: row.ext,
+      mime: mimeForExt(row.ext),
       mediaType: row.media_type,
       sizeBytes: row.size_bytes,
       mtimeMs: row.mtime_ms,

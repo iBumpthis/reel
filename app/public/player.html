@@ -228,6 +228,7 @@
              grouped as marker actions (divider mirrors the visualizer toolbar). -->
         <div class="player-actions">
           <button class="btn btn-sm" id="openDescOverlay">Description</button>
+          <button class="btn btn-sm" id="openFileInfo">File Info</button>
           <div class="player-actions-markers">
             <button class="btn btn-sm" id="exportMarkers">Export Markers</button>
             <button class="btn btn-sm" id="openImportOverlay">Import Markers</button>
@@ -299,6 +300,19 @@
         <span class="text-sm text-muted" id="importStatus"></span>
         <button class="btn btn-accent" id="importBtn">Import</button>
       </div>
+    </div>
+  </div>
+
+  <!-- File Info overlay (read-only). First instance of the in-app info-surfacing
+       pattern; body rendered from the already-fetched media payload. -->
+  <div class="overlay hidden" id="fileInfoOverlay">
+    <div class="overlay-backdrop" data-close="fileInfoOverlay"></div>
+    <div class="overlay-panel">
+      <div class="overlay-header">
+        <span class="overlay-title">File Info</span>
+        <button class="overlay-close" data-close="fileInfoOverlay">✕</button>
+      </div>
+      <div class="file-info" id="fileInfoBody"></div>
     </div>
   </div>
 

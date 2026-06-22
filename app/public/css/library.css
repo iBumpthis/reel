@@ -588,4 +588,17 @@
     align-items: flex-start;
     gap: 8px;
   }
+  /* REEL-005: on mobile the toolbar goes column, so toolbar-right wraps its
+     [type] [markers] | [sort] [order] controls wherever they happen to fall —
+     stranding the last sort select on its own line. Turn the divider into a
+     full-width flex line-break so the wrap is intentional: filters on one row,
+     both sorts together on the next. The visible hairline isn't needed here
+     since the two groups are already on separate lines. */
+  .toolbar-divider {
+    flex-basis: 100%;
+    height: 0;
+    min-height: 0;
+    margin: 0;
+    background: transparent;
+  }
 }
