@@ -3,7 +3,7 @@
  * Loads media, initializes modules, handles global keyboard shortcuts.
  */
 import * as api from '../shared/api.js';
-import { toast, fmtTime } from '../shared/utils.js';
+import { toast, fmtTime, fmtBytes, copyText } from '../shared/utils.js';
 import { initControls, cleanupControls } from './controls.js';
 import { cleanupVisualizer } from './visualizer.js';
 import { initModes, setMode, cycleVizStyle, cycleTheme, toggleTrails } from './modes.js';
@@ -197,6 +197,7 @@ async function load() {
     initDescription();
     initExportMarkers();
     initImport();
+    initFileInfo();
 
   } catch (err) {
     els.playerTitle.textContent = 'Not found';
@@ -434,6 +435,93 @@ function initImport() {
     } finally {
       elImportBtn.disabled = false;
     }
+  });
+}
+
+// ============================================================
+// File Info (read-only overlay) — REEL-004
+// ============================================================
+// First in-app info-surfacing surface. Reads the already-fetched media payload
+// (no extra request) and lists file facts (location, size, container, type,
+// modified) + metadata. Built with DOM nodes + textContent rather than
+// innerHTML so arbitrary path/title text can't inject markup. Container is
+// reported BY EXTENSION (ext + server MIME); true codec/bitrate would need
+// ffprobe, which isn't in the image — intentionally not claimed here.
+const elFileInfoOverlay = document.getElementById('fileInfoOverlay');
+const elFileInfoBody = document.getElementById('fileInfoBody');
+
+function renderFileInfo() {
+  elFileInfoBody.innerHTML = '';
+  const m = state.media;
+  if (!m) {
+    const empty = document.createElement('div');
+    empty.className = 'text-sm text-muted';
+    empty.textContent = 'No file loaded.';
+    elFileInfoBody.appendChild(empty);
+    return;
+  }
+
+  const addRow = (label, value, { hint, copy } = {}) => {
+    if (value == null || value === '') return;
+    const rowEl = document.createElement('div');
+    rowEl.className = 'file-info-row';
+
+    const labelEl = document.createElement('span');
+    labelEl.className = 'file-info-label';
+    labelEl.textContent = label;
+    if (hint) {
+      const h = document.createElement('span');
+      h.className = 'file-info-hint';
+      h.textContent = hint;
+      labelEl.append(' ', h);
+    }
+
+    const valEl = document.createElement('span');
+    valEl.className = 'file-info-value';
+    valEl.textContent = String(value);
+    if (copy) {
+      const btn = document.createElement('button');
+      btn.className = 'file-info-copy';
+      btn.textContent = 'copy';
+      btn.title = 'Copy to clipboard';
+      btn.addEventListener('click', async () => {
+        const ok = await copyText(copy);
+        toast(ok ? 'Copied to clipboard' : 'Copy failed', ok ? 'success' : 'error');
+      });
+      valEl.append(' ', btn);
+    }
+
+    rowEl.append(labelEl, valEl);
+    elFileInfoBody.appendChild(rowEl);
+  };
+
+  // File facts (the bits not otherwise surfaced in the player).
+  addRow('Filename', m.filename);
+  addRow('Library', m.libraryName);
+  addRow('Type', m.mediaType === 'audio' ? 'Audio' : 'Video');
+  const container = (m.ext || '').toUpperCase() + (m.mime ? ` · ${m.mime}` : '');
+  addRow('Container', container, { hint: 'by extension' });
+  addRow('Size', m.sizeBytes != null ? fmtBytes(m.sizeBytes) : null);
+  if (m.mtimeMs) addRow('File modified', new Date(m.mtimeMs).toLocaleString());
+  addRow('Location', m.relPath, { copy: m.relPath });
+  if (m.absPath && m.absPath !== m.relPath) addRow('Full path', m.absPath, { copy: m.absPath });
+
+  // Metadata.
+  addRow('Title', m.title);
+  addRow('Artist', m.artist);
+  addRow('Album', m.album);
+  addRow('Year', m.year);
+  addRow('Track', m.trackNumber);
+  addRow('Markers', String(m.markers?.length ?? 0));
+  addRow('Tags', m.tags?.length ? m.tags.map(t => t.name).join(', ') : '0');
+}
+
+function initFileInfo() {
+  const openBtn = document.getElementById('openFileInfo');
+  if (!openBtn) return;
+  openBtn.addEventListener('click', () => {
+    renderFileInfo();
+    elFileInfoOverlay.classList.remove('hidden');
   });
 }
 

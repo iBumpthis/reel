@@ -668,6 +668,7 @@
 
 .player-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 10px;
 }
@@ -696,6 +697,53 @@
   word-break: break-word;
 }
 .desc-display.hidden { display: none; }
+
+/* --- File Info overlay (REEL-004) — key/value rows in an .overlay-panel --- */
+.file-info {
+  display: flex;
+  flex-direction: column;
+}
+.file-info-row {
+  display: grid;
+  grid-template-columns: 130px minmax(0, 1fr);
+  gap: 12px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 0.857rem;
+}
+.file-info-row:last-child { border-bottom: none; }
+.file-info-label {
+  color: var(--text-secondary);
+  min-width: 0;
+}
+.file-info-hint {
+  color: var(--text-muted);
+  font-size: 0.714rem;
+}
+.file-info-value {
+  color: var(--text-primary);
+  min-width: 0;
+  /* Long absolute paths must wrap inside the panel rather than overflow it. */
+  word-break: break-all;
+}
+.file-info-copy {
+  font-size: 0.714rem;
+  padding: 1px 8px;
+  vertical-align: middle;
+}
+@media (max-width: 640px) {
+  .file-info-row {
+    grid-template-columns: 100px minmax(0, 1fr);
+    gap: 8px;
+  }
+  /* When .player-actions wraps (narrow viewports), the markers sub-cluster can
+     land at the start of a new line — its left-border divider would then dangle.
+     Drop the divider treatment on mobile; the wrap itself separates the group. */
+  .player-actions-markers {
+    padding-left: 0;
+    border-left: none;
+  }
+}
 
 /* ============================================================
    Markers panel (right side)

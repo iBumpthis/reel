@@ -1198,6 +1198,49 @@ existing `gap` spaces the button from the count). Verified headless at
 390/768/1280px: single button instance, in the left group ahead of the count,
 no page overflow.
 
+### v1.19.0 — File Info panel (REEL-004) + mobile toolbar break (REEL-005)
+
+**File Info (REEL-004).** A read-only "File Info" button in the player's per-file
+actions row (next to Description — semantically a per-file affordance, and it
+keeps the REEL-001-sensitive header grid untouched) opens an overlay listing the
+file's facts and metadata. This is the **first in-app info-surfacing surface** —
+intentionally the reusable frame for the upcoming settings / library-management
+arc, built on the existing `.overlay`/`.overlay-panel`/`[data-close]` conventions
+rather than as a bolt-on.
+
+- **Data:** read straight from the already-fetched `GET /api/media/:id` payload —
+  no extra request. Shows filename, library, type, container, size, file-modified
+  time, location (relPath + absPath, each with a copy button), plus title / artist
+  / album / year / track / marker count / tags.
+- **Container is reported BY EXTENSION** (ext + server MIME). True
+  codec/bitrate/resolution needs ffprobe, which isn't in the image — deliberately
+  not claimed; the row carries a "by extension" hint.
+- **Backend:** one additive field — `mime: mimeForExt(row.ext)` on the media
+  payload, reusing the server's existing MIME map so the frontend doesn't
+  duplicate it (single source of truth). No schema, no writes, no migration.
+- **Copy:** a reusable `copyText()` was added to `shared/utils.js` with a
+  secure-context → hidden-`<textarea>`/`execCommand` fallback, because Reel runs
+  over plain HTTP on the LAN where `navigator.clipboard` is unavailable. The copy
+  buttons on the path rows use it.
+- **Safety:** the panel is built with DOM nodes + `textContent` (not `innerHTML`),
+  so arbitrary path/title text can't inject markup.
+- **Regression caught + fixed in the same pass:** adding the button tipped the
+  `.player-actions` row past the viewport at ≤390px (the row had no `flex-wrap`
+  and was already at the edge with three buttons). Fixed by letting
+  `.player-actions` wrap, and dropping the markers sub-cluster's left-border
+  divider on mobile so it doesn't dangle at the start of a wrapped line. Verified
+  headless: player page no longer overflows at 360/390/768/1280px; File Info panel
+  values (long abs paths) wrap inside the panel rather than overflow it.
+
+**Mobile toolbar break (REEL-005).** On mobile the index toolbar goes column and
+`toolbar-right` wrapped its `[type] [markers] | [sort] [order]` controls wherever
+they fell, stranding the last sort select on its own line. The `.toolbar-divider`
+is now a full-width flex line-break at ≤640px, so the wrap is intentional:
+filters on one row, both sorts together on the next. Verified headless at 390/430px
+— filters share a row, both sorts share the next, no stranded select, no overflow.
+Reporter had rated it minimal/device-dependent; this makes the grouping
+deterministic across widths.
+
 ## Planned
 
 ### Data Durability (continued, post-1.10.0)
