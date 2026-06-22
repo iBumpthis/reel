@@ -83,6 +83,18 @@
           <span class="scan-status" id="scanStatus"></span>
         </div>
         <div class="toolbar-right">
+          <select id="typeFilter" title="Filter by media type" aria-label="Filter by media type">
+            <option value="">All types</option>
+            <option value="audio">Audio</option>
+            <option value="video">Video</option>
+          </select>
+          <select id="markerFilter" title="Filter by marker presence" aria-label="Filter by marker presence">
+            <option value="">Any markers</option>
+            <option value="has">Has markers</option>
+            <option value="none">No markers</option>
+          </select>
+          <button id="surpriseBtn" class="btn" title="Play a random item from the current view">Surprise Me</button>
+          <span class="toolbar-divider" aria-hidden="true"></span>
           <select id="sortField">
             <option value="mtime">Date modified</option>
             <option value="title">Title</option>

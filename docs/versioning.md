@@ -1120,6 +1120,66 @@ overflow), with the long title truncating. The v1.17.2 `.card-title` fix is
 retained — it's still required for the truncation to render; this release adds
 the grid-level constraint it was waiting on.
 
+### v1.18.0 — Filter bar (Audio/Video + Has/No Markers) + "Surprise Me", plus a cleanup bundle
+
+The first feature pass aimed at the tester rollout: visible browsing controls
+over the ~3k-item library, plus a small bundle of near-zero-risk fixes folded in.
+
+**Filter bar.** Two `<select>`s and a button join the toolbar's right group:
+
+- **Media type** (`All types` / `Audio` / `Video`). The `type` filter was
+  already server-side (`m.media_type = @type`); this only wires the UI to send
+  it. Frontend-only on the backend's part.
+- **Marker presence** (`Any markers` / `Has markers` / `No markers`). New
+  predicate in the library filter: `markers=has` →
+  `EXISTS (SELECT 1 FROM markers mk WHERE mk.media_id = m.id)`, `markers=none` →
+  the `NOT EXISTS` complement. EXISTS short-circuits on the `markers(media_id)`
+  index, so it's cheap over the full library. No bound param (fixed per branch).
+- **"Surprise Me"** → new `GET /api/library/random`: one random id from the
+  CURRENT filtered view (`ORDER BY RANDOM() LIMIT 1`), `{ id }` or `{ id: null }`
+  when nothing matches; the frontend then navigates to `/player.html?id=`.
+
+The list route's filter predicate was factored into a single shared
+`buildFilters()` that BOTH `/api/library` and `/api/library/random` consume, so
+the two can never drift — the random pick honours exactly the same
+lib/type/ext/artist/tag/q/markers/present filters as the visible grid. The list
+route keeps its own cursor/sort/limit handling on top; those are irrelevant to
+the random pick and ignored there.
+
+Design note: type/markers deliberately render NO active-filter chip — the
+`<select>` is both the indicator and the clear affordance, unlike the
+sidebar-driven lib/artist/tag filters that have no other on-screen control.
+
+**Cleanup bundle (folded in, all low-risk):**
+
+- **REEL-003 — b2b config passthrough.** `loadConfig()` never read
+  `b2bDisplayJoin` / `b2bTagging` from the file, so every consumer's
+  `config.b2bDisplayJoin ?? ' b2b '` / `config.b2bTagging !== false` saw
+  `undefined`: the join was permanently the `' b2b '` default and the tagging
+  flag could never be disabled. Both are now threaded through —
+  `b2bTagging` defaults ON (only an explicit `false` disables), `b2bDisplayJoin`
+  is string-guarded so a malformed value can't reach the filename parser. The
+  now-stale "passthrough gap" comment in `routes/media.js` was corrected.
+- **Markers-import post-success state.** The bulk markers importer reset its
+  button to the armable stage-1 in `finally` with the destructive CSV still
+  loaded — a hot control inviting an accidental re-fire on the same payload. It
+  now parks as a DISABLED `Imported ✓` on success (tracked by a distinct
+  `markerImportDone` flag); editing the textarea re-arms it for a deliberate
+  second run. Failure still resets so a retry is immediate.
+- **`.sidebar-item-name` flex-ellipsis (latent).** Added `min-width: 0` — same
+  flex class of bug as the 1.17.2/1.17.3 card title. Without it a long artist
+  name floors at its min-content and shoves the count out of the row; with it
+  the name ellipsizes and the count stays put. Verified headless at 390px (long
+  synthetic name truncates, count remains in-row) alongside the new toolbar (no
+  page overflow at 390/768/1280px).
+
+Tests: `library-filters.test.js` covers the markers `has`/`none` predicate
+(including the present-filter interaction and exact partition of the present
+set), type+markers composition, and that the random route draws only from the
+shared filtered set (50/25-draw membership checks) and returns nothing on an
+empty set. DB-backed, skips cleanly without better-sqlite3; SQL validated
+end-to-end against the 001–006 chain via node:sqlite in-sandbox.
+
 ## Planned
 
 ### Data Durability (continued, post-1.10.0)

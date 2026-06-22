@@ -18,6 +18,9 @@ const elScanBtn = document.getElementById('scanBtn');
 const elScanStatus = document.getElementById('scanStatus');
 const elSortField = document.getElementById('sortField');
 const elSortOrder = document.getElementById('sortOrder');
+const elTypeFilter = document.getElementById('typeFilter');
+const elMarkerFilter = document.getElementById('markerFilter');
+const elSurpriseBtn = document.getElementById('surpriseBtn');
 const elActiveFilters = document.getElementById('activeFilters');
 const elResultCount = document.getElementById('resultCount');
 const elMediaGrid = document.getElementById('mediaGrid');
@@ -255,12 +258,16 @@ function getFilterParams() {
   const q = elSearchInput.value.trim();
   const sort = elSortField.value;
   const order = elSortOrder.value;
+  const type = elTypeFilter.value;     // '' | 'audio' | 'video'
+  const markers = elMarkerFilter.value; // '' | 'has' | 'none'
 
   if (activeLibFilter) params.lib = activeLibFilter;
   if (activeArtistFilter) params.artist = activeArtistFilter;
   if (q) params.q = q;
   if (sort) params.sort = sort;
   if (order) params.order = order;
+  if (type) params.type = type;
+  if (markers) params.markers = markers;
   if (activeTagFilter.length > 0) params.tag = activeTagFilter.join(',');
 
   return params;
@@ -799,9 +806,14 @@ elImportBtn.addEventListener('click', async () => {
 // Missing: the action is destructive (it deletes every matched file's existing
 // markers before inserting the CSV's rows), so the first click only arms.
 let markerImportArmed = false;
+// True only in the post-success "Imported ✓" parked state. Kept distinct from
+// `armed` so the input listener can re-arm out of EITHER state when the payload
+// changes, without sniffing button text.
+let markerImportDone = false;
 
 function resetMarkerImportBtn() {
   markerImportArmed = false;
+  markerImportDone = false;
   elMarkerImportBtn.textContent = 'Import & replace markers';
   elMarkerImportBtn.classList.remove('btn-danger-armed');
   elMarkerImportBtn.disabled = false;
@@ -817,9 +829,11 @@ elOpenMarkerImportBtn.addEventListener('click', () => {
   elMarkerImportOverlay.classList.remove('hidden');
 });
 
-// Editing the payload after arming invalidates the pending confirm.
+// Editing the payload after arming (or after a completed import) invalidates
+// the pending confirm / clears the parked "Imported ✓" state so a fresh,
+// deliberate two-click arm is required again.
 elMarkerImportText.addEventListener('input', () => {
-  if (markerImportArmed) resetMarkerImportBtn();
+  if (markerImportArmed || markerImportDone) resetMarkerImportBtn();
 });
 
 elMarkerImportBtn.addEventListener('click', async () => {
@@ -863,10 +877,21 @@ elMarkerImportBtn.addEventListener('click', async () => {
 
     await refreshSidebarData();
     loadLibrary();
+
+    // Success: park the button as a DISABLED "Imported ✓" rather than resetting
+    // it to the armable stage-1. The pasted CSV is still loaded, and the import
+    // is destructive (it replaces every matched file's markers), so leaving the
+    // control hot invited an accidental re-fire on the same payload. Editing the
+    // textarea (input listener) re-arms it for a deliberate second run.
+    markerImportArmed = false;
+    markerImportDone = true;
+    elMarkerImportBtn.textContent = 'Imported ✓';
+    elMarkerImportBtn.classList.remove('btn-danger-armed');
+    elMarkerImportBtn.disabled = true;
   } catch (err) {
     elMarkerImportStatus.textContent = `Error: ${err.message}`;
     toast(`Markers import failed: ${err.message}`, 'error');
-  } finally {
+    // Failure → reset so the user can immediately retry the same payload.
     resetMarkerImportBtn();
   }
 });
@@ -899,6 +924,33 @@ elSearchClear.addEventListener('click', () => {
 
 elSortField.addEventListener('change', () => loadLibrary());
 elSortOrder.addEventListener('change', () => loadLibrary());
+
+// Type (audio/video) and marker-presence filters. The <select> is the visible
+// control AND the clear affordance (set back to "All…"), so these deliberately
+// don't render redundant filter chips — unlike lib/artist/tag, which are driven
+// from the sidebar and have no other on-screen indication. Reset the cursor by
+// reloading from scratch (loadLibrary() with append=false).
+elTypeFilter.addEventListener('change', () => loadLibrary());
+elMarkerFilter.addEventListener('change', () => loadLibrary());
+
+// "Surprise Me" — jump to a random item from the CURRENT filtered view. Reuses
+// getFilterParams() so it honours the active library/artist/tag/search/type/
+// marker filters; the server ignores sort/order/limit for the random pick.
+elSurpriseBtn.addEventListener('click', async () => {
+  elSurpriseBtn.disabled = true;
+  try {
+    const { id } = await api.getRandom(getFilterParams());
+    if (id == null) {
+      toast('Nothing matches the current filters', '');
+      return;
+    }
+    location.href = `/player.html?id=${encodeURIComponent(id)}`;
+  } catch (err) {
+    toast(`Surprise failed: ${err.message}`, 'error');
+  } finally {
+    elSurpriseBtn.disabled = false;
+  }
+});
 
 elLoadMoreBtn.addEventListener('click', () => loadLibrary(true));
 

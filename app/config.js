@@ -41,6 +41,16 @@ export function loadConfig() {
     // Artist casing fold (migration 006). Default ON. When false, case-variant
     // artists (Rezz/REZZ) are NOT grouped — the facet/filter behave as in v1.15.
     artistCanonicalFold: file.artistCanonicalFold !== false,
+    // Back-to-back (b2b) display + tagging. REEL-003: these were never read from
+    // the file, so every consumer's `config.b2bDisplayJoin ?? ' b2b '` /
+    // `config.b2bTagging !== false` saw `undefined` — the join was always the
+    // ' b2b ' default and the tagging flag could never be turned off. Now passed
+    // through. b2bTagging defaults ON (only an explicit `false` disables it);
+    // b2bDisplayJoin is string-guarded so a malformed (non-string) value can't
+    // reach the filename parser — stricter than the consumers' nullish fallback,
+    // never a regression for valid configs.
+    b2bTagging: file.b2bTagging !== false,
+    b2bDisplayJoin: typeof file.b2bDisplayJoin === 'string' ? file.b2bDisplayJoin : ' b2b ',
   };
 
   // Validate required fields

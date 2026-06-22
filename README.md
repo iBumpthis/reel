@@ -590,6 +590,7 @@ with appropriate HTTP status codes.
 |--------|------|-------------|
 | GET | `/api/health` | `{ ok, name, version }` |
 | GET | `/api/library` | Paginated media list with search, filter, sort |
+| GET | `/api/library/random` | Random media id from the same filter set as `/api/library` — `{ id }` (or `{ id: null }` if none). Powers "Surprise Me" |
 | GET | `/api/media/:id` | Full media record with markers, tags, stream URL |
 | PATCH | `/api/media/:id` | Update metadata (title, artist, album, year, trackNumber, description) |
 | POST | `/api/media/:id/markers` | Replace markers (text or JSON array) |
@@ -617,11 +618,16 @@ with appropriate HTTP status codes.
 | `ext` | Filter by file extension |
 | `artist` | Filter by exact artist name |
 | `tag` | Comma-separated tag names (AND logic) |
+| `markers` | `has` (≥1 marker) or `none` (zero markers) |
 | `sort` | `title`, `artist`, `album`, `year`, `mtime`, `size`, `created` (default: `mtime`) |
 | `order` | `asc` or `desc` (default: `desc`) |
 | `limit` | Page size, 1–200 (default: 50) |
 | `cursor` | Opaque pagination token from `nextCursor` |
 | `missing` | `only` (orphans only) or `include` (show missing too); default hides missing |
+
+`/api/library/random` accepts the filter params above (`q`, `lib`, `type`,
+`ext`, `artist`, `tag`, `markers`, `missing`); `sort`, `order`, `limit`, and
+`cursor` are ignored.
 
 ## Browser Compatibility
 
