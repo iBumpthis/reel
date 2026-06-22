@@ -1180,6 +1180,24 @@ shared filtered set (50/25-draw membership checks) and returns nothing on an
 empty set. DB-backed, skips cleanly without better-sqlite3; SQL validated
 end-to-end against the 001–006 chain via node:sqlite in-sandbox.
 
+### v1.18.1 — Toolbar: "Surprise Me" regrouped (v1.18.0 follow-up)
+
+Pure HTML reorder, no behaviour change. In v1.18.0 "Surprise Me" was placed in
+the toolbar's right group, between the two filter `<select>`s and the two sort
+`<select>`s — so a standalone *action* read as if it belonged to the filter or
+sort group. Moved it into the left group, ahead of the item count, so it stands
+on its own. The toolbar now reads:
+
+`[Surprise Me]  (item count) … [All types] [Any markers] | [sort field] [order]`
+
+The `.toolbar-divider` stays where it was; with the button gone from the right
+group it now correctly separates the two genuinely-distinct concerns it was
+meant to — filters on the left of the pipe, sort on the right. No JS change (the
+button is wired by id, position-independent); no CSS change (the left group's
+existing `gap` spaces the button from the count). Verified headless at
+390/768/1280px: single button instance, in the left group ahead of the count,
+no page overflow.
+
 ## Planned
 
 ### Data Durability (continued, post-1.10.0)
