@@ -144,6 +144,11 @@
   opacity: 0.7;
 }
 .sidebar-item-name {
+  /* min-width:0 lets this flex child shrink below its content width so a long
+     artist name ellipsizes instead of flooring at min-content and shoving the
+     count out of the row (same flex-ellipsis class of bug as the 1.17.2/1.17.3
+     card title — fixed here pre-emptively). */
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -238,6 +243,18 @@
   display: flex;
   align-items: center;
   gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* Thin separator between the filter group (type / markers / Surprise Me) and
+   the sort selects in the toolbar. Collapses to nothing when the row wraps so
+   it never dangles at the start of a wrapped line. */
+.toolbar-divider {
+  width: 1px;
+  align-self: stretch;
+  min-height: 20px;
+  background: var(--border-subtle);
+  margin: 0 2px;
 }
 
 .result-count {

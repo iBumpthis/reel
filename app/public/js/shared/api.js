@@ -35,6 +35,20 @@ export function getLibrary(params = {}) {
   return request(url.pathname + url.search);
 }
 
+/**
+ * GET /api/library/random → { id }
+ * A single random media id matching the SAME filter params as getLibrary
+ * (lib, type, ext, artist, tag, q, markers, missing). `id` is null when nothing
+ * matches. sort/order/limit/cursor are ignored server-side. Powers "Surprise Me".
+ */
+export function getRandom(params = {}) {
+  const url = new URL('/api/library/random', location.origin);
+  for (const [k, v] of Object.entries(params)) {
+    if (v != null && v !== '') url.searchParams.set(k, v);
+  }
+  return request(url.pathname + url.search);
+}
+
 /** GET /api/media/:id → full media record with markers, tags, streamUrl */
 export function getMedia(id) {
   return request(`/api/media/${encodeURIComponent(id)}`);

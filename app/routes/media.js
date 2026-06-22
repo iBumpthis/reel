@@ -6,9 +6,9 @@ export default async function mediaRoutes(fastify) {
 
   // Artist link statements for the inline-edit re-sync (C2-c). Built once at
   // registration; fastify.config is decorated in server.js. b2bJoin mirrors the
-  // scanner (note the pre-existing config.js passthrough gap — b2bDisplayJoin
-  // isn't wired through config.js, so this is effectively always " b2b ";
-  // intentionally left alone, just mirrored here so PATCH and scan agree).
+  // scanner so PATCH and scan rebuild the same artist chain. As of REEL-003 the
+  // config passthrough is fixed, so this now honours a configured b2bDisplayJoin
+  // (the `?? ' b2b '` is retained only as a defensive default).
   const artistStmts = makeArtistStmts(db, fastify.config);
   const b2bJoin = fastify.config.b2bDisplayJoin ?? ' b2b ';
 

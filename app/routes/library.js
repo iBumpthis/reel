@@ -47,12 +47,97 @@ function decodeCursor(cursor) {
   }
 }
 
+/**
+ * Build the shared filter WHERE conditions + bound params from a query object.
+ * This is the SINGLE source of the browse/search filter predicate, shared by
+ * GET /api/library (paginated list) and GET /api/library/random ("Surprise Me")
+ * so the two can never drift. It returns ONLY filter conditions — no cursor, no
+ * sort, no limit, which are list-specific and applied by the caller.
+ *
+ * Supported keys: missing, lib, type, ext, artist, tag, q, markers.
+ */
+function buildFilters({ lib, type, ext, tag, q, artist, missing, markers }) {
+  const conditions = [];
+  const params = {};
+
+  // Presence filter (soft-delete, migration 004). Rows whose files have gone
+  // missing are RETAINED but hidden from normal browse/search by default.
+  // `missing=only` powers the maintenance / purge-confirm view; `include`
+  // shows both. Added first so it propagates into the totalCount query too.
+  if (missing === 'only') {
+    conditions.push('m.present = 0');
+  } else if (missing !== 'include') {
+    conditions.push('m.present = 1');
+  }
+
+  if (lib) {
+    conditions.push('l.name = @lib');
+    params.lib = lib;
+  }
+  if (type) {
+    conditions.push('m.media_type = @type');
+    params.type = type;
+  }
+  if (ext) {
+    conditions.push('m.ext = @ext');
+    params.ext = ext.toLowerCase();
+  }
+  if (artist) {
+    // Membership test against the relational artist model (media_artists, 005)
+    // resolved through the CANONICAL row (006): match any media linked to an
+    // artist whose canonical name equals the (canonical) value the facet
+    // emitted. So filtering "Rezz" returns "REZZ"-cased files too, and an act
+    // (C2) returns its set. COALESCE(canonical_id, id) makes this degrade to
+    // the v1.15 exact match when nothing is folded. Still case-EXACT on the
+    // canonical name (the deliberate canonical casing) — do NOT lower().
+    conditions.push(
+      'EXISTS (SELECT 1 FROM media_artists ma ' +
+      'JOIN artists a   ON a.id  = ma.artist_id ' +
+      'JOIN artists can ON can.id = COALESCE(a.canonical_id, a.id) ' +
+      'WHERE ma.media_id = m.id AND can.name = @artist)'
+    );
+    params.artist = artist;
+  }
+  if (tag) {
+    // Support comma-separated tags (AND logic — item must have all tags)
+    const tagNames = tag.split(',').map(t => t.trim().toLowerCase()).filter(Boolean);
+    if (tagNames.length > 0) {
+      conditions.push(`m.id IN (
+        SELECT mt.media_id FROM media_tags mt
+        JOIN tags t ON t.id = mt.tag_id
+        WHERE t.normalized IN (${tagNames.map((_, i) => `@tag${i}`).join(',')})
+        GROUP BY mt.media_id
+        HAVING COUNT(DISTINCT t.id) = @tagCount
+      )`);
+      tagNames.forEach((t, i) => { params[`tag${i}`] = t; });
+      params.tagCount = tagNames.length;
+    }
+  }
+  // Marker presence filter. `has` → at least one marker; `none` → zero markers.
+  // EXISTS short-circuits on the markers(media_id) index, so it's cheap even
+  // over the full library. No bound param — the predicate is fixed per branch.
+  if (markers === 'has') {
+    conditions.push('EXISTS (SELECT 1 FROM markers mk WHERE mk.media_id = m.id)');
+  } else if (markers === 'none') {
+    conditions.push('NOT EXISTS (SELECT 1 FROM markers mk WHERE mk.media_id = m.id)');
+  }
+  if (q) {
+    const ftsQuery = toFtsQuery(q);
+    if (ftsQuery) {
+      conditions.push(`(m.id IN (SELECT rowid FROM media_fts WHERE media_fts MATCH @q) OR m.id IN (SELECT mt.media_id FROM media_tags mt JOIN tags t ON t.id = mt.tag_id WHERE t.normalized LIKE '%' || @qLower || '%'))`);
+      params.q = ftsQuery;
+      params.qLower = q.toLowerCase();
+    }
+  }
+
+  return { conditions, params };
+}
+
 export default async function libraryRoutes(fastify) {
   const db = fastify.db;
 
   fastify.get('/api/library', async (request, reply) => {
     const {
-      lib, type, ext, tag, q, artist, missing,
       sort = 'mtime',
       order = 'desc',
       limit: rawLimit = '50',
@@ -70,71 +155,8 @@ export default async function libraryRoutes(fastify) {
 
     const sortColumn = SORT_COLUMN_MAP[sort];
 
-    // Build WHERE clauses
-    const conditions = [];
-    const params = {};
-
-    // Presence filter (soft-delete, migration 004). Rows whose files have gone
-    // missing are RETAINED but hidden from normal browse/search by default.
-    // `missing=only` powers the maintenance / purge-confirm view; `include`
-    // shows both. Added first so it propagates into the totalCount query too.
-    if (missing === 'only') {
-      conditions.push('m.present = 0');
-    } else if (missing !== 'include') {
-      conditions.push('m.present = 1');
-    }
-
-    if (lib) {
-      conditions.push('l.name = @lib');
-      params.lib = lib;
-    }
-    if (type) {
-      conditions.push('m.media_type = @type');
-      params.type = type;
-    }
-    if (ext) {
-      conditions.push('m.ext = @ext');
-      params.ext = ext.toLowerCase();
-    }
-    if (artist) {
-      // Membership test against the relational artist model (media_artists, 005)
-      // resolved through the CANONICAL row (006): match any media linked to an
-      // artist whose canonical name equals the (canonical) value the facet
-      // emitted. So filtering "Rezz" returns "REZZ"-cased files too, and an act
-      // (C2) returns its set. COALESCE(canonical_id, id) makes this degrade to
-      // the v1.15 exact match when nothing is folded. Still case-EXACT on the
-      // canonical name (the deliberate canonical casing) — do NOT lower().
-      conditions.push(
-        'EXISTS (SELECT 1 FROM media_artists ma ' +
-        'JOIN artists a   ON a.id  = ma.artist_id ' +
-        'JOIN artists can ON can.id = COALESCE(a.canonical_id, a.id) ' +
-        'WHERE ma.media_id = m.id AND can.name = @artist)'
-      );
-      params.artist = artist;
-    }
-    if (tag) {
-      // Support comma-separated tags (AND logic — item must have all tags)
-      const tagNames = tag.split(',').map(t => t.trim().toLowerCase()).filter(Boolean);
-      if (tagNames.length > 0) {
-        conditions.push(`m.id IN (
-          SELECT mt.media_id FROM media_tags mt
-          JOIN tags t ON t.id = mt.tag_id
-          WHERE t.normalized IN (${tagNames.map((_, i) => `@tag${i}`).join(',')})
-          GROUP BY mt.media_id
-          HAVING COUNT(DISTINCT t.id) = @tagCount
-        )`);
-        tagNames.forEach((t, i) => { params[`tag${i}`] = t; });
-        params.tagCount = tagNames.length;
-      }
-    }
-    if (q) {
-      const ftsQuery = toFtsQuery(q);
-      if (ftsQuery) {
-        conditions.push(`(m.id IN (SELECT rowid FROM media_fts WHERE media_fts MATCH @q) OR m.id IN (SELECT mt.media_id FROM media_tags mt JOIN tags t ON t.id = mt.tag_id WHERE t.normalized LIKE '%' || @qLower || '%'))`);
-        params.q = ftsQuery;
-        params.qLower = q.toLowerCase();
-      }
-    }
+    // Shared filter predicate (also used by /api/library/random).
+    const { conditions, params } = buildFilters(request.query);
 
     // Snapshot filter conditions BEFORE the cursor predicate —
     // used by the totalCount query below.
@@ -254,5 +276,38 @@ export default async function libraryRoutes(fastify) {
     const libraries = db.prepare('SELECT id, name, path FROM libraries').all();
 
     return { items, libraries, nextCursor, totalCount };
+  });
+
+  // ----------------------------------------------------------------
+  // GET /api/library/random — "Surprise Me"
+  // ----------------------------------------------------------------
+  // Returns a single random media id matching the SAME filters as /api/library
+  // (lib, type, ext, artist, tag, q, markers, missing) by reusing buildFilters,
+  // so the surprise honours whatever the user is currently browsing. Sort,
+  // cursor, and limit are irrelevant here and ignored. `id` is null when the
+  // filter set matches nothing. ORDER BY RANDOM() LIMIT 1 is fine at this
+  // library's scale (low thousands); if it ever grows large enough to matter,
+  // swap to an OFFSET on COUNT(*). The frontend navigates to /player.html?id=.
+  fastify.get('/api/library/random', async (request, reply) => {
+    const { conditions, params } = buildFilters(request.query);
+    const whereClause = conditions.length > 0
+      ? 'WHERE ' + conditions.join(' AND ')
+      : '';
+    const sql = `
+      SELECT m.id
+      FROM media m
+      JOIN libraries l ON l.id = m.library_id
+      ${whereClause}
+      ORDER BY RANDOM()
+      LIMIT 1
+    `;
+    let row;
+    try {
+      row = db.prepare(sql).get(params);
+    } catch (err) {
+      fastify.log.warn(err, 'Random library query failed');
+      return reply.code(400).send({ error: 'Invalid query' });
+    }
+    return { id: row ? row.id : null };
   });
 }
