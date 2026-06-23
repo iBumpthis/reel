@@ -139,9 +139,10 @@ export function getMissingCount() {
 }
 
 /**
- * POST /api/scan/purge-missing → { ok, purged }
+ * POST /api/scan/purge-missing → { ok, purged, staleTags }
  * DESTRUCTIVE: permanently deletes all missing rows, cascading their markers
- * and tag links. Call only behind an explicit two-click confirmation.
+ * and tag links, then sweeps any tags thereby orphaned (staleTags = count
+ * removed). Call only behind an explicit two-click confirmation.
  */
 export function purgeMissing() {
   return request('/api/scan/purge-missing', { method: 'POST' });

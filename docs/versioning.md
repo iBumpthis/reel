@@ -1261,6 +1261,50 @@ Small follow-up to the File Info panel; no behaviour change to the data shown.
   audio/video disjointness and that each MIME's prefix matches its classified
   media type, so a future map edit can't silently mis-pair them.
 
+### v1.19.2 — scan-ignore for sidecar dirs (REEL-009a) + stale-tag sweep on purge (REEL-019)
+
+Two small backend-focused maintenance wins. Independent of each other; bundled
+as a pre-arc patch ahead of the REEL-016 subtype work so the data-deletion change
+(REEL-019) lands in its own small, separately-validatable release.
+
+- **REEL-009a — directory-walk ignore list.** The scanner descended into NAS/OS
+  sidecar and trash directories on every pass — `@eaDir` (Synology's thumbnail
+  cache, the worst offender), `#recycle`, `#snapshot`, `@Recycle`, `lost+found`,
+  the macOS `.Trashes`/`.Spotlight-V100`/`.fseventsd`, and per-uid `.Trash-<n>`
+  — burning CIFS round-trips on subtrees that never hold library media. The walk
+  now skips these at the **directory** level (it never descends), in both the
+  plain-directory and symlinked-directory branches. Rules live in a new
+  dependency-free `services/scan-ignore.js` (`IGNORED_DIRS` + `shouldIgnoreDir`),
+  deliberately NOT inlined into `scanner.js` so the predicate stays unit-testable
+  without pulling in `music-metadata` — the same isolation pattern as
+  `metadata.js`/`mime.js`. `.DS_Store` is intentionally NOT in the set: it's a
+  file, not a directory, and is already excluded by the extension filter; listing
+  it as a dir rule would be misleading. New pure-logic `scan-ignore.test.js`
+  (always runs) covers exact names, the `.Trash-` prefix, case-sensitivity, and
+  the real-directory negatives.
+- **REEL-019 — stale-tag sweep on purge (DATA-DELETION PATH).** After a purge,
+  tags whose every media was removed lingered as count-0 ghosts (the leftover
+  test-artist tags from parsing experiments). Correction to a prior assumption:
+  `media_tags` **is** cascade-cleared by the purge already
+  (`media_tags.media_id → media(id) ON DELETE CASCADE`, with `foreign_keys=ON`);
+  the manual `DELETE FROM media_tags` in `import-export.js` is a re-link clear,
+  not evidence of a missing cascade. So the only lingering rows are the orphaned
+  `tags` themselves. The purge endpoint now runs the media delete and a
+  `DELETE FROM tags WHERE id NOT IN (SELECT DISTINCT tag_id FROM media_tags)` as
+  **one transaction** — the media delete fires the `media_tags` cascade first,
+  then the sweep runs against the post-cascade state; atomic so a crash between
+  them can't half-finish, and the returned counts stay consistent. The sweep is
+  intentionally broad (clears any orphan, including ones left by tag-edit
+  replace-all), which is safe because there is no path to create a standalone
+  empty tag — an orphan is always dead. `NOT IN` is NULL-safe here because
+  `media_tags.tag_id` is `NOT NULL`. The count is surfaced, not silent: the API
+  returns `{ ok, purged, staleTags }` and the purge toast appends
+  "…, removed N stale tags". DB test `purge-stale-tags.test.js` (better-sqlite3,
+  skips cleanly without a native build; logic separately validated via
+  `node:sqlite` against migrations 001–006) asserts the cascade fires, shared
+  tags survive, the lonely/ghost tags are swept, and the empty-`media_tags`
+  edge.
+
 ## Planned
 
 ### Data Durability (continued, post-1.10.0)

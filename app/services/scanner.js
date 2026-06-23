@@ -3,6 +3,7 @@ import { join, relative, extname, basename } from 'node:path';
 import { mediaTypeForExt } from './mime.js';
 import { parseFilename } from './metadata.js';
 import { deriveArtistMembers, makeArtistStmts, syncArtistLinks } from './artists.js';
+import { shouldIgnoreDir } from './scan-ignore.js';
 import { parseFile } from 'music-metadata';
 
 /** Audio extensions where embedded tag reading is worthwhile. */
@@ -40,6 +41,7 @@ async function* walkDir(dir, counters, visited) {
   for (const entry of entries) {
     const full = join(dir, entry.name);
     if (entry.isDirectory()) {
+      if (shouldIgnoreDir(entry.name)) continue; // skip sidecar/trash subtrees
       yield* walkDir(full, counters, visited);
     } else if (entry.isFile()) {
       yield full;
@@ -54,6 +56,7 @@ async function* walkDir(dir, counters, visited) {
       }
 
       if (target.isDirectory()) {
+        if (shouldIgnoreDir(entry.name)) continue; // ignored even via symlink
         let real;
         try {
           real = await realpath(full);

@@ -15,6 +15,32 @@ export default async function scanRoutes(fastify) {
   // marks rows missing.
   const purgeMissing = db.prepare('DELETE FROM media WHERE present = 0');
 
+  // Stale-tag sweep (REEL-019). Purging media cascades the media_tags link
+  // rows away (FK media_tags.media_id -> media(id) ON DELETE CASCADE, with
+  // foreign_keys=ON), but the tags rows themselves have NO cascade — a tag
+  // whose every media has been purged lingers as a count-0 ghost (the
+  // test-artist tags left over from parsing experiments are exactly this).
+  // This deletes every orphaned tag (no remaining media_tags row). The sweep
+  // is intentionally broad: it also mops up orphans left by the tag-edit
+  // replace-all flow (routes/tags.js clears then relinks), not only ones this
+  // purge created. Safe because there is no path to create a standalone empty
+  // tag — tags only ever come into existence via linking — so an orphan tag
+  // is always genuinely dead. tag_id is NOT NULL in media_tags, so the NOT IN
+  // subquery cannot hit the NULL-membership trap.
+  const deleteOrphanTags = db.prepare(
+    'DELETE FROM tags WHERE id NOT IN (SELECT DISTINCT tag_id FROM media_tags)'
+  );
+
+  // One transaction: the media DELETE fires the media_tags cascade FIRST, then
+  // the orphan-tag sweep runs against the post-cascade state. Atomic so a crash
+  // between the two statements can't leave a half-swept DB, and so the returned
+  // counts are mutually consistent.
+  const purgeTx = db.transaction(() => {
+    const purged = purgeMissing.run().changes;
+    const staleTags = deleteOrphanTags.run().changes;
+    return { purged, staleTags };
+  });
+
   // POST /api/scan — synchronous HTTP, async internals.
   // Optional body { fullMetadata: true } runs a Full Metadata Scan: the same
   // walk + present/missing reconciliation, plus a forced embedded-tag re-read
@@ -54,17 +80,18 @@ export default async function scanRoutes(fastify) {
   });
 
   // POST /api/scan/purge-missing — permanently delete all missing rows.
-  // DESTRUCTIVE and irreversible: cascades to markers + tag links. Intended to
-  // be called only behind an explicit two-click confirmation in the UI. Gated
-  // against a concurrent scan so it can't delete rows mid-reactivation.
+  // DESTRUCTIVE and irreversible: cascades to markers + tag links, then sweeps
+  // any tags thereby orphaned (REEL-019). Intended to be called only behind an
+  // explicit two-click confirmation in the UI. Gated against a concurrent scan
+  // so it can't delete rows mid-reactivation.
   fastify.post('/api/scan/purge-missing', async (request, reply) => {
     if (scanInFlight) {
       return reply.code(409).send({ ok: false, error: 'Scan in progress — try again after it completes' });
     }
-    const result = purgeMissing.run();
-    if (result.changes > 0) {
-      fastify.log.warn(`Purged ${result.changes} missing media row(s) (cascaded markers + tags)`);
+    const { purged, staleTags } = purgeTx();
+    if (purged > 0 || staleTags > 0) {
+      fastify.log.warn(`Purged ${purged} missing media row(s) (cascaded markers + tags); removed ${staleTags} stale tag(s)`);
     }
-    return { ok: true, purged: result.changes };
+    return { ok: true, purged, staleTags };
   });
 }

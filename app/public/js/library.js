@@ -700,8 +700,9 @@ elPurgeBtn.addEventListener('click', async () => {
   elPurgeBtn.disabled = true;
   elPurgeBtn.textContent = 'Purging…';
   try {
-    const { purged } = await api.purgeMissing();
-    toast(`Purged ${purged} missing item${purged !== 1 ? 's' : ''}`, 'success');
+    const { purged, staleTags } = await api.purgeMissing();
+    const tail = staleTags > 0 ? `, removed ${staleTags} stale tag${staleTags !== 1 ? 's' : ''}` : '';
+    toast(`Purged ${purged} missing item${purged !== 1 ? 's' : ''}${tail}`, 'success');
     resetSettings();
     await refreshSidebarData();
     loadLibrary();
