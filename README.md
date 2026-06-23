@@ -148,7 +148,7 @@ filter for all back-to-back sets.
 > per member for a b2b set).
 >
 > As of **v1.16.0** the facet/filter resolve through a **canonical** layer:
-> case-variant artists (`Rezz` / `REZZ` / `rezz`) browse as **one** entry under
+> case-variant artists (`Artist1` / `ARTIST1` / `artist1`) browse as **one** entry under
 > the most-used casing, and filtering it returns every casing's files. The
 > player links carry the canonical so they always land on a populated view. This
 > is a **browse-grouping concern only** — `media.artist` is untouched, so each
@@ -156,7 +156,7 @@ filter for all back-to-back sets.
 > rows. Set `"artistCanonicalFold": false` in `config.json` to disable folding
 > (browse reverts to the per-casing v1.15 behaviour).
 >
-> As of **v1.16.1** a bracketed group/act alias (`[WANKDAT]`) is a **browsable
+> As of **v1.16.1** a bracketed group/act alias (`[DUOACT]`) is a **browsable
 > entity** in its own right (see *Group / Act Aliases* below), and deliberately
 > renaming the majority casing of a folded group moves the canonical display to
 > the new majority **on the next restart** (`./deploy.sh` restarts the
@@ -194,15 +194,15 @@ An act is reachable three ways — via each individual member **and** via the ac
 itself:
 
 ```
-Eptic b2b Space Laces b2b SVDDEN DEATH [MASTERHVND] - Some Set (2026).mp4
-  → browse: Eptic | Space Laces | SVDDEN DEATH | MASTERHVND (act)
+Artist1 b2b Artist2 b2b Artist3 [TRIONAME] - Some Set (2026).mp4
+  → browse: Artist1 | Artist2 | Artist3 | TRIONAME (act)
 ```
 
 Acts are their **own** canonical and are never case-folded into a same-spelled
 person (an act is a distinct kind of entity, not a casing of an artist). They
 work for any number of members and for named acts as well as occasional
 pairings (gated by the same `b2bTagging` switch). A solo file with a trailing
-alias (`Skrillex [OWSLA] - …`) promotes the act too.
+alias (`Artist [VIP] - …`) promotes the act too.
 
 > **Reserved slot.** A trailing `[...]` in the **artist position** (before the
 > first ` - `) is reserved **exclusively for an act name** — not a
