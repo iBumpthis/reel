@@ -1241,6 +1241,26 @@ filters on one row, both sorts together on the next. Verified headless at 390/43
 Reporter had rated it minimal/device-dependent; this makes the grouping
 deterministic across widths.
 
+### v1.19.1 — File Info polish + MIME map test coverage (v1.19.0 follow-up)
+
+Small follow-up to the File Info panel; no behaviour change to the data shown.
+
+- **Container caveat as an `[i]` affordance.** The inline "by extension" hint text
+  on the Container row is replaced by a compact `[i]` icon carrying a title
+  tooltip ("Currently limited to extension-based information") — same
+  title-tooltip pattern as the player's other controls. Saves horizontal room in
+  the label column and gives the caveat more room to explain itself on
+  hover/focus. The icon is keyboard-focusable with an `aria-label` mirror of the
+  tooltip. `addRow`'s `hint` option became `note`; the now-unused `.file-info-hint`
+  style was replaced by `.file-info-info`.
+- **MIME map test coverage.** v1.19.0 surfaced `mimeForExt(row.ext)` in the media
+  payload, so `mime.test.js` (new, pure-logic, always runs — no DB skip) now locks
+  the two contracts File Info relies on: every SUPPORTED extension resolves to a
+  MIME (Container is never bare for a real file), and an unknown/empty extension
+  returns null (Container shows a clean `EXT`, never `EXT · null`). Also guards
+  audio/video disjointness and that each MIME's prefix matches its classified
+  media type, so a future map edit can't silently mis-pair them.
+
 ## Planned
 
 ### Data Durability (continued, post-1.10.0)

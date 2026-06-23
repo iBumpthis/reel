@@ -716,9 +716,27 @@
   color: var(--text-secondary);
   min-width: 0;
 }
-.file-info-hint {
+.file-info-info {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid var(--text-muted);
   color: var(--text-muted);
-  font-size: 0.714rem;
+  font-size: 0.64rem;
+  font-style: italic;
+  font-weight: 700;
+  line-height: 1;
+  cursor: help;
+  vertical-align: middle;
+}
+.file-info-info:hover,
+.file-info-info:focus-visible {
+  color: var(--text-secondary);
+  border-color: var(--text-secondary);
+  outline: none;
 }
 .file-info-value {
   color: var(--text-primary);

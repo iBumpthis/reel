@@ -461,7 +461,7 @@ function renderFileInfo() {
     return;
   }
 
-  const addRow = (label, value, { hint, copy } = {}) => {
+  const addRow = (label, value, { note, copy } = {}) => {
     if (value == null || value === '') return;
     const rowEl = document.createElement('div');
     rowEl.className = 'file-info-row';
@@ -469,11 +469,18 @@ function renderFileInfo() {
     const labelEl = document.createElement('span');
     labelEl.className = 'file-info-label';
     labelEl.textContent = label;
-    if (hint) {
-      const h = document.createElement('span');
-      h.className = 'file-info-hint';
-      h.textContent = hint;
-      labelEl.append(' ', h);
+    if (note) {
+      // Compact [i] affordance instead of inline hint text — saves horizontal
+      // room in the label column and surfaces the caveat on hover/focus via the
+      // native title tooltip (same pattern as the player's other title tooltips).
+      const info = document.createElement('span');
+      info.className = 'file-info-info';
+      info.textContent = 'i';
+      info.title = note;
+      info.tabIndex = 0;
+      info.setAttribute('role', 'note');
+      info.setAttribute('aria-label', note);
+      labelEl.append(' ', info);
     }
 
     const valEl = document.createElement('span');
@@ -500,7 +507,7 @@ function renderFileInfo() {
   addRow('Library', m.libraryName);
   addRow('Type', m.mediaType === 'audio' ? 'Audio' : 'Video');
   const container = (m.ext || '').toUpperCase() + (m.mime ? ` · ${m.mime}` : '');
-  addRow('Container', container, { hint: 'by extension' });
+  addRow('Container', container, { note: 'Currently limited to extension-based information' });
   addRow('Size', m.sizeBytes != null ? fmtBytes(m.sizeBytes) : null);
   if (m.mtimeMs) addRow('File modified', new Date(m.mtimeMs).toLocaleString());
   addRow('Location', m.relPath, { copy: m.relPath });
